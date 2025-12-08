@@ -10,9 +10,12 @@ services:
     ports:
       - "7860:7860"
       - "8000:8000"
+<<<<<<< HEAD
     volumes:
       - /home/sean/Documents/ktransformers/deepseek-ai:/app/models/deepseek-ai:ro
       - /home/sean/Documents/ktransformers/LLaMA-Factory/saves:/app/saves:ro
+=======
+>>>>>>> 87c31a7 (Add kt-sft and LLaMA-Factory integration changes)
     ipc: host
     tty: true
     # shm_size: "16gb"  # ipc: host is set
