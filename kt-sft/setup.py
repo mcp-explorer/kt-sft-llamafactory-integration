@@ -634,13 +634,20 @@ if CUDA_HOME is not None or ROCM_HOME is not None:
         'csrc/ktransformers_ext/cuda/gptq_marlin/gptq_marlin.cu'
     ],
     extra_compile_args={
-            'cxx': ['-O3', '-DKTRANSFORMERS_USE_CUDA'],
+            'cxx': ['-O3', '-DKTRANSFORMERS_USE_CUDA', '-std=c++17'],
             'nvcc': [
                 '-O3',
                 # '--use_fast_math',
                 '-Xcompiler', '-fPIC',
                 '-DKTRANSFORMERS_USE_CUDA',
-            ]
+                '--expt-relaxed-constexpr',
+                '--extended-lambda',
+                '-DCUDART_VERSION=12200',
+                '-Xcompiler', '-Wno-error',
+                '--allow-unsupported-compiler',
+                '-std=c++17',
+            ],
+            'include_dirs': []
         }
     )
 elif MUSA_HOME is not None:

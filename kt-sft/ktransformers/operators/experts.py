@@ -176,15 +176,54 @@ class KExpertsCPU(KExpertsBase):
         self.gate_type = w["gate_type"]
         self.up_type = w["up_type"]
         self.down_type = w["down_type"]
-        gate_ptr = ctypes.addressof(
-            ctypes.cast(self.gate.ctypes.data, ctypes.POINTER(ctypes.c_uint64)).contents
-        )
-        up_ptr = ctypes.addressof(
-            ctypes.cast(self.up.ctypes.data, ctypes.POINTER(ctypes.c_uint64)).contents
-        )
-        down_ptr = ctypes.addressof(
-            ctypes.cast(self.down.ctypes.data, ctypes.POINTER(ctypes.c_uint64)).contents
-        )
+        
+        # Convert numpy arrays to PyTorch tensors if needed
+        if isinstance(self.gate, np.ndarray):
+            self.gate = torch.from_numpy(self.gate)
+        if isinstance(self.up, np.ndarray):
+            self.up = torch.from_numpy(self.up)
+        if isinstance(self.down, np.ndarray):
+            self.down = torch.from_numpy(self.down)
+        
+        # Ensure tensors are on CPU and contiguous
+        if isinstance(self.gate, torch.Tensor):
+            if self.gate.device.type != 'cpu':
+                self.gate = self.gate.cpu()
+            if not self.gate.is_contiguous():
+                self.gate = self.gate.contiguous()
+        if isinstance(self.up, torch.Tensor):
+            if self.up.device.type != 'cpu':
+                self.up = self.up.cpu()
+            if not self.up.is_contiguous():
+                self.up = self.up.contiguous()
+        if isinstance(self.down, torch.Tensor):
+            if self.down.device.type != 'cpu':
+                self.down = self.down.cpu()
+            if not self.down.is_contiguous():
+                self.down = self.down.contiguous()
+        
+        # Get pointers - handle both PyTorch tensors and numpy arrays
+        if isinstance(self.gate, torch.Tensor):
+            gate_ptr = self.gate.data_ptr()
+        else:
+            gate_ptr = ctypes.addressof(
+                ctypes.cast(self.gate.ctypes.data, ctypes.POINTER(ctypes.c_uint64)).contents
+            )
+        
+        if isinstance(self.up, torch.Tensor):
+            up_ptr = self.up.data_ptr()
+        else:
+            up_ptr = ctypes.addressof(
+                ctypes.cast(self.up.ctypes.data, ctypes.POINTER(ctypes.c_uint64)).contents
+            )
+        
+        if isinstance(self.down, torch.Tensor):
+            down_ptr = self.down.data_ptr()
+        else:
+            down_ptr = ctypes.addressof(
+                ctypes.cast(self.down.ctypes.data, ctypes.POINTER(ctypes.c_uint64)).contents
+            )
+        
         # print(self.gate_qtype, self.up_qtype, self.down_qtype)
         n_routed_experts = self.n_routed_experts
         self.cpu_infer = KExpertsCPU.CPU_INFER
@@ -279,27 +318,33 @@ class KExpertsCPU(KExpertsBase):
     def submit_for_one_decode(self, input_tensor, expert_ids, weights, bsz_tensor=None, cuda_graph_idx=0):
         if bsz_tensor is None:
             bsz_tensor = torch.ones(1, device=input_tensor.device, dtype=torch.int32)
+        # Convert string device to device object for current_stream
+        device_obj = torch.device(self.out_device) if isinstance(self.out_device, str) else self.out_device
+        stream = torch.cuda.current_stream(device_obj) if device_obj.type == 'cuda' else torch.cuda.current_stream()
         if cuda_graph_idx != -1:
             KExpertsCPU.input_tensor_cpu[cuda_graph_idx].copy_(input_tensor, non_blocking=True)
             KExpertsCPU.expert_ids_cpu[cuda_graph_idx].copy_(expert_ids, non_blocking=True)
             KExpertsCPU.weights_cpu[cuda_graph_idx].copy_(weights, non_blocking=True)
             KExpertsCPU.bsz_tensor_cpu[cuda_graph_idx].copy_(bsz_tensor, non_blocking=True)
-            self.cpu_infer.submit_with_cuda_stream(torch.cuda.current_stream(self.out_device).cuda_stream, self.moe.forward(1, expert_ids.size(-1), KExpertsCPU.expert_ids_cpu[cuda_graph_idx].data_ptr(), KExpertsCPU.weights_cpu[cuda_graph_idx].data_ptr(), KExpertsCPU.input_tensor_cpu[cuda_graph_idx].data_ptr(), KExpertsCPU.output_cpu[cuda_graph_idx].data_ptr(), KExpertsCPU.bsz_tensor_cpu[cuda_graph_idx].data_ptr()))
+            self.cpu_infer.submit_with_cuda_stream(stream.cuda_stream, self.moe.forward(1, expert_ids.size(-1), KExpertsCPU.expert_ids_cpu[cuda_graph_idx].data_ptr(), KExpertsCPU.weights_cpu[cuda_graph_idx].data_ptr(), KExpertsCPU.input_tensor_cpu[cuda_graph_idx].data_ptr(), KExpertsCPU.output_cpu[cuda_graph_idx].data_ptr(), KExpertsCPU.bsz_tensor_cpu[cuda_graph_idx].data_ptr()))
         else:
             KExpertsCPU.input_tensor_cpu.copy_(input_tensor, non_blocking=True)
             KExpertsCPU.expert_ids_cpu.copy_(expert_ids, non_blocking=True)
             KExpertsCPU.weights_cpu.copy_(weights, non_blocking=True)
             KExpertsCPU.bsz_tensor_cpu.copy_(bsz_tensor, non_blocking=True)
-            self.cpu_infer.submit_with_cuda_stream(torch.cuda.current_stream(self.out_device).cuda_stream, self.moe.forward(1, expert_ids.size(-1), KExpertsCPU.expert_ids_cpu.data_ptr(), KExpertsCPU.weights_cpu.data_ptr(), KExpertsCPU.input_tensor_cpu.data_ptr(), KExpertsCPU.output_cpu.data_ptr(), KExpertsCPU.bsz_tensor_cpu.data_ptr()))
+            self.cpu_infer.submit_with_cuda_stream(stream.cuda_stream, self.moe.forward(1, expert_ids.size(-1), KExpertsCPU.expert_ids_cpu.data_ptr(), KExpertsCPU.weights_cpu.data_ptr(), KExpertsCPU.input_tensor_cpu.data_ptr(), KExpertsCPU.output_cpu.data_ptr(), KExpertsCPU.bsz_tensor_cpu.data_ptr()))
         
 
     def sync_for_one_decode(self, cuda_graph_idx=0):
+        # Convert string device to device object for current_stream
+        device_obj = torch.device(self.out_device) if isinstance(self.out_device, str) else self.out_device
+        stream = torch.cuda.current_stream(device_obj) if device_obj.type == 'cuda' else torch.cuda.current_stream()
         if cuda_graph_idx != -1:
-            self.cpu_infer.sync_with_cuda_stream(torch.cuda.current_stream(self.out_device).cuda_stream)
+            self.cpu_infer.sync_with_cuda_stream(stream.cuda_stream)
             KExpertsCPU.output_gpu_map[self.out_device][cuda_graph_idx].copy_(KExpertsCPU.output_cpu[cuda_graph_idx], non_blocking=True)
             return KExpertsCPU.output_gpu_map[self.out_device][cuda_graph_idx]
         else:
-            self.cpu_infer.sync_with_cuda_stream(torch.cuda.current_stream(self.out_device).cuda_stream)
+            self.cpu_infer.sync_with_cuda_stream(stream.cuda_stream)
             KExpertsCPU.output_gpu_map[self.out_device].copy_(KExpertsCPU.output_cpu, non_blocking=True)
             return KExpertsCPU.output_gpu_map[self.out_device]
 
@@ -459,15 +504,87 @@ class KSFTExpertsCPU(torch.autograd.Function):
         self.gate_type = w["gate_type"]
         self.up_type = w["up_type"]
         self.down_type = w["down_type"]
-        gate_ptr = ctypes.addressof(
-            ctypes.cast(self.gate.ctypes.data, ctypes.POINTER(ctypes.c_uint64)).contents
-        )
-        up_ptr = ctypes.addressof(
-            ctypes.cast(self.up.ctypes.data, ctypes.POINTER(ctypes.c_uint64)).contents
-        )
-        down_ptr = ctypes.addressof(
-            ctypes.cast(self.down.ctypes.data, ctypes.POINTER(ctypes.c_uint64)).contents
-        )
+        
+        # Convert numpy arrays to PyTorch tensors if needed
+        if isinstance(self.gate, np.ndarray):
+            self.gate = torch.from_numpy(self.gate)
+        if isinstance(self.up, np.ndarray):
+            self.up = torch.from_numpy(self.up)
+        if isinstance(self.down, np.ndarray):
+            self.down = torch.from_numpy(self.down)
+        
+        # Debug: Check tensor properties before getting pointers
+        debug = os.environ.get("KSFT_MOE_DEBUG", "0") == "1"
+        if debug:
+            print(f"[KSFTExpertsCPU.load] Checking tensor properties...")
+            if isinstance(self.gate, torch.Tensor):
+                print(f"  gate: device={self.gate.device}, shape={self.gate.shape}, dtype={self.gate.dtype}, is_contiguous={self.gate.is_contiguous()}")
+            else:
+                print(f"  gate: type={type(self.gate)}, shape={self.gate.shape if hasattr(self.gate, 'shape') else 'N/A'}")
+            if isinstance(self.up, torch.Tensor):
+                print(f"  up: device={self.up.device}, shape={self.up.shape}, dtype={self.up.dtype}, is_contiguous={self.up.is_contiguous()}")
+            else:
+                print(f"  up: type={type(self.up)}, shape={self.up.shape if hasattr(self.up, 'shape') else 'N/A'}")
+            if isinstance(self.down, torch.Tensor):
+                print(f"  down: device={self.down.device}, shape={self.down.shape}, dtype={self.down.dtype}, is_contiguous={self.down.is_contiguous()}")
+            else:
+                print(f"  down: type={type(self.down)}, shape={self.down.shape if hasattr(self.down, 'shape') else 'N/A'}")
+        
+        # Ensure tensors are on CPU and contiguous
+        if isinstance(self.gate, torch.Tensor):
+            if self.gate.device.type != 'cpu':
+                print(f"[KSFTExpertsCPU.load] WARNING: gate tensor is on {self.gate.device}, moving to CPU")
+                self.gate = self.gate.cpu()
+            if not self.gate.is_contiguous():
+                print(f"[KSFTExpertsCPU.load] WARNING: gate tensor is not contiguous, making contiguous")
+                self.gate = self.gate.contiguous()
+            
+        if isinstance(self.up, torch.Tensor):
+            if self.up.device.type != 'cpu':
+                print(f"[KSFTExpertsCPU.load] WARNING: up tensor is on {self.up.device}, moving to CPU")
+                self.up = self.up.cpu()
+            if not self.up.is_contiguous():
+                print(f"[KSFTExpertsCPU.load] WARNING: up tensor is not contiguous, making contiguous")
+                self.up = self.up.contiguous()
+            
+        if isinstance(self.down, torch.Tensor):
+            if self.down.device.type != 'cpu':
+                print(f"[KSFTExpertsCPU.load] WARNING: down tensor is on {self.down.device}, moving to CPU")
+                self.down = self.down.cpu()
+            if not self.down.is_contiguous():
+                print(f"[KSFTExpertsCPU.load] WARNING: down tensor is not contiguous, making contiguous")
+                self.down = self.down.contiguous()
+        
+        # Get pointers after ensuring CPU and contiguous
+        # Handle both PyTorch tensors and numpy arrays
+        if isinstance(self.gate, torch.Tensor):
+            gate_ptr = self.gate.data_ptr()
+        else:
+            # numpy array
+            gate_ptr = ctypes.addressof(
+                ctypes.cast(self.gate.ctypes.data, ctypes.POINTER(ctypes.c_uint64)).contents
+            )
+        
+        if isinstance(self.up, torch.Tensor):
+            up_ptr = self.up.data_ptr()
+        else:
+            # numpy array
+            up_ptr = ctypes.addressof(
+                ctypes.cast(self.up.ctypes.data, ctypes.POINTER(ctypes.c_uint64)).contents
+            )
+        
+        if isinstance(self.down, torch.Tensor):
+            down_ptr = self.down.data_ptr()
+        else:
+            # numpy array
+            down_ptr = ctypes.addressof(
+                ctypes.cast(self.down.ctypes.data, ctypes.POINTER(ctypes.c_uint64)).contents
+            )
+        
+        if debug:
+            print(f"[KSFTExpertsCPU.load] Pointer values: gate_ptr={gate_ptr}, up_ptr={up_ptr}, down_ptr={down_ptr}")
+            print(f"[KSFTExpertsCPU.load] gate.data_ptr()={self.gate.data_ptr()}, up.data_ptr()={self.up.data_ptr()}, down.data_ptr()={self.down.data_ptr()}")
+        
         #print(self.gate_type, self.up_type, self.down_type)
         n_routed_experts = self.n_routed_experts
         # n_routed_experts = len(self.orig_module)
@@ -557,15 +674,24 @@ class KSFTExpertsCPU(torch.autograd.Function):
         KSFTExpertsCPU.input_tensor_cpu.copy_(input_tensor, non_blocking=True)
         KSFTExpertsCPU.expert_ids_cpu.copy_(expert_ids, non_blocking=True)
         KSFTExpertsCPU.weights_cpu.copy_(weights, non_blocking=True)
-        self.cpu_infer.submit_with_cuda_stream(torch.cuda.current_stream(self.out_device).cuda_stream, self.moe.forward(1, expert_ids.size(0), KSFTExpertsCPU.expert_ids_cpu.data_ptr(), KSFTExpertsCPU.weights_cpu.data_ptr(), KSFTExpertsCPU.input_tensor_cpu.data_ptr(), KSFTExpertsCPU.output_cpu.data_ptr()))
+        # Convert string device to device object for current_stream
+        device_obj = torch.device(self.out_device) if isinstance(self.out_device, str) else self.out_device
+        stream = torch.cuda.current_stream(device_obj) if device_obj.type == 'cuda' else torch.cuda.current_stream()
+        self.cpu_infer.submit_with_cuda_stream(stream.cuda_stream, self.moe.forward(1, expert_ids.size(0), KSFTExpertsCPU.expert_ids_cpu.data_ptr(), KSFTExpertsCPU.weights_cpu.data_ptr(), KSFTExpertsCPU.input_tensor_cpu.data_ptr(), KSFTExpertsCPU.output_cpu.data_ptr()))
         
     def sync_for_one_decode(self):
-        self.cpu_infer.sync_with_cuda_stream(torch.cuda.current_stream(self.out_device).cuda_stream)
+        # Convert string device to device object for current_stream
+        device_obj = torch.device(self.out_device) if isinstance(self.out_device, str) else self.out_device
+        stream = torch.cuda.current_stream(device_obj) if device_obj.type == 'cuda' else torch.cuda.current_stream()
+        self.cpu_infer.sync_with_cuda_stream(stream.cuda_stream)
         KSFTExpertsCPU.output_gpu_map[self.out_device].copy_(KSFTExpertsCPU.output_cpu, non_blocking=True)
         return KSFTExpertsCPU.output_gpu_map[self.out_device]
 
     @staticmethod
     def forward(ctx, input_tensor, expert_ids, weights, cpu_infer, moe, out_device, layer_idx):
+        # Optional env-guarded debug logging
+        debug = os.environ.get("KSFT_MOE_DEBUG", "0") == "1"
+        
         # print("Go into the forward")
         
         # generate, capture and run cuda graph
@@ -577,6 +703,7 @@ class KSFTExpertsCPU(torch.autograd.Function):
         if input_tensor.size(0)==1 and torch.cuda.is_current_stream_capturing():
             # TODO: this branch is unreachable, but the shape of input_tensor([1,hidden_size]) and input_tensor_cpu([hidden_size]) is not compatible
             #print("capturing experts")
+            wall_t0 = time.time()
             KSFTExpertsCPU.input_tensor_cpu.copy_(input_tensor, non_blocking=True)
             KSFTExpertsCPU.expert_ids_cpu.copy_(expert_ids, non_blocking=True)
             KSFTExpertsCPU.weights_cpu.copy_(weights, non_blocking=True)
@@ -592,6 +719,9 @@ class KSFTExpertsCPU(torch.autograd.Function):
             output = torch.empty_like(input_tensor).contiguous()
             # print("success record")
             wall_t0 = time.time()
+            # Forward pass - this should populate the forward cache
+            if debug:
+                print(f"[KSFTExpertsCPU.forward] Calling moe.forward with qlen={expert_ids.size(0)}, k={expert_ids.size(1)}", flush=True)
             cpu_infer.submit(
                 moe.forward(
                     expert_ids.size(0), 
@@ -602,7 +732,11 @@ class KSFTExpertsCPU(torch.autograd.Function):
                     output.data_ptr(),
                 )
             )
+            if debug:
+                print(f"[KSFTExpertsCPU.forward] Forward submitted, syncing...", flush=True)
             cpu_infer.sync()
+            if debug:
+                print(f"[KSFTExpertsCPU.forward] Forward sync completed - cache should be populated", flush=True)
             t_fwd     = time.time() - wall_t0
 
             result = output.to(device=out_device)
@@ -631,37 +765,248 @@ class KSFTExpertsCPU(torch.autograd.Function):
         
     @staticmethod
     def backward(ctx, output_grad):
-        # print("Go into the backward!!")
-        
-        # Pick back the middle results
-        input_tensor, expert_ids, weights = ctx.saved_tensors
-        import random
-        layer_idx = random.randint(0, 10000)
-        # print(f"layer_idx:{layer_idx}")
-        # layer_idx   = ctx.layer_idx
-        
-        # cpu_infer  = ctx.cpu_infer
-        # moe        = ctx.moe
-        # out_device = ctx.out_device
+        # Optional env-guarded debug logging to help trace segfaults
+        debug = os.environ.get("KSFT_MOE_DEBUG", "0") == "1"
+        try:
+            # Pick back the middle results
+            input_tensor, expert_ids, weights = ctx.saved_tensors
+        except Exception as e:
+            if debug:
+                print("[KSFTExpertsCPU.backward] failed to unpack ctx.saved_tensors:", e, flush=True)
+            raise
 
-        # ready for computing gradient
-        output_grad = output_grad.contiguous().cpu()
-        input_grad = torch.empty_like(input_tensor).contiguous()
-        # print(dir(cpuinfer_ext.moe.MOE))
-        bw_start = time.time()
-        ctx.cpu_infer.submit(
-            ctx.moe.backward(
-                # layer_idx,
-                output_grad.size(0),  # qlen
-                expert_ids.size(1),   # k
-                expert_ids.data_ptr(),
-                weights.data_ptr(),
-                input_tensor.data_ptr(), 
-                output_grad.data_ptr(),
-                input_grad.data_ptr(),
+        layer_idx = ctx.layer_idx
+        # Ensure layer_idx is a valid int (default to 0 if None or invalid)
+        if layer_idx is None:
+            layer_idx = 0
+        else:
+            layer_idx = int(layer_idx)
+
+        # ready for computing gradient: ensure all tensors are contiguous and on CPU
+        # Force explicit CPU transfer - convert to float32 first (numpy doesn't support bfloat16), then to numpy and back
+        if output_grad.device.type != 'cpu':
+            if debug:
+                print(f"[KSFTExpertsCPU.backward] output_grad is on {output_grad.device}, dtype={output_grad.dtype}, moving to CPU", flush=True)
+            # Save original dtype before conversion
+            original_dtype = output_grad.dtype
+            # Convert to float32 first (numpy doesn't support bfloat16), then to numpy and back to force new CPU allocation
+            # Use torch.tensor() constructor to ensure completely new CPU allocation
+            output_grad_cpu = output_grad.detach().cpu().float()
+            output_grad_np = output_grad_cpu.numpy().copy()  # Explicit copy
+            # Try multiple methods to get a valid CPU tensor
+            GPU_THRESHOLD = 2**40  # 1TB
+            output_grad = torch.tensor(output_grad_np, dtype=original_dtype, device=torch.device('cpu')).contiguous()
+            ptr = output_grad.data_ptr()
+            
+            if ptr > GPU_THRESHOLD:
+                if debug:
+                    print(f"[KSFTExpertsCPU.backward] WARNING: Pointer {ptr} exceeds threshold, trying alternative allocation methods", flush=True)
+                
+                # Method 1: Use empty + copy
+                try:
+                    output_grad_alt = torch.empty(output_grad_np.shape, dtype=original_dtype, device=torch.device('cpu'))
+                    output_grad_alt.copy_(torch.from_numpy(output_grad_np).to(dtype=original_dtype))
+                    output_grad_alt = output_grad_alt.contiguous()
+                    ptr_alt = output_grad_alt.data_ptr()
+                    if debug:
+                        print(f"[KSFTExpertsCPU.backward] Method 1 (empty+copy): ptr={ptr_alt} ({ptr_alt/(2**30):.2f} GB)", flush=True)
+                    if ptr_alt <= GPU_THRESHOLD:
+                        output_grad = output_grad_alt
+                        if debug:
+                            print(f"[KSFTExpertsCPU.backward] ✓ Using Method 1 - pointer is reasonable", flush=True)
+                except Exception as e:
+                    if debug:
+                        print(f"[KSFTExpertsCPU.backward] Method 1 failed: {e}", flush=True)
+                
+                # Method 2: Use zeros + copy (if Method 1 didn't work or still has high pointer)
+                if output_grad.data_ptr() > GPU_THRESHOLD:
+                    try:
+                        output_grad_alt2 = torch.zeros(output_grad_np.shape, dtype=original_dtype, device=torch.device('cpu'))
+                        output_grad_alt2.copy_(torch.from_numpy(output_grad_np).to(dtype=original_dtype))
+                        output_grad_alt2 = output_grad_alt2.contiguous()
+                        ptr_alt2 = output_grad_alt2.data_ptr()
+                        if debug:
+                            print(f"[KSFTExpertsCPU.backward] Method 2 (zeros+copy): ptr={ptr_alt2} ({ptr_alt2/(2**30):.2f} GB)", flush=True)
+                        if ptr_alt2 <= GPU_THRESHOLD:
+                            output_grad = output_grad_alt2
+                            if debug:
+                                print(f"[KSFTExpertsCPU.backward] ✓ Using Method 2 - pointer is reasonable", flush=True)
+                    except Exception as e:
+                        if debug:
+                            print(f"[KSFTExpertsCPU.backward] Method 2 failed: {e}", flush=True)
+                
+                # Final check
+                final_ptr = output_grad.data_ptr()
+                if final_ptr > GPU_THRESHOLD:
+                    if debug:
+                        print(f"[KSFTExpertsCPU.backward] ⚠️  All methods resulted in high pointer {final_ptr}, trying pin_memory approach", flush=True)
+                    # Last resort: use pin_memory (like the rest of the codebase does)
+                    try:
+                        output_grad_pinned = torch.empty(output_grad_np.shape, dtype=original_dtype, device=torch.device('cpu'), pin_memory=True)
+                        output_grad_pinned.copy_(torch.from_numpy(output_grad_np).to(dtype=original_dtype))
+                        output_grad_pinned = output_grad_pinned.contiguous()
+                        ptr_pinned = output_grad_pinned.data_ptr()
+                        if debug:
+                            print(f"[KSFTExpertsCPU.backward] Method 3 (pin_memory): ptr={ptr_pinned} ({ptr_pinned/(2**30):.2f} GB)", flush=True)
+                        output_grad = output_grad_pinned
+                    except Exception as e:
+                        if debug:
+                            print(f"[KSFTExpertsCPU.backward] Method 3 (pin_memory) failed: {e}, proceeding with original", flush=True)
+                elif debug:
+                    print(f"[KSFTExpertsCPU.backward] ✓ Successfully got reasonable pointer: {final_ptr}", flush=True)
+            elif debug:
+                print(f"[KSFTExpertsCPU.backward] After numpy conversion: output_grad.device={output_grad.device}, dtype={output_grad.dtype}, ptr={output_grad.data_ptr()}", flush=True)
+        else:
+            # Even if on CPU, ensure it's detached and contiguous
+            output_grad = output_grad.detach().contiguous()
+            
+        if input_tensor.device.type != 'cpu':
+            if debug:
+                print(f"[KSFTExpertsCPU.backward] input_tensor is on {input_tensor.device}, moving to CPU", flush=True)
+            input_tensor = input_tensor.cpu().clone().contiguous()
+        else:
+            input_tensor = input_tensor.contiguous()
+            
+        if expert_ids.device.type != 'cpu':
+            if debug:
+                print(f"[KSFTExpertsCPU.backward] expert_ids is on {expert_ids.device}, moving to CPU", flush=True)
+            expert_ids = expert_ids.cpu().clone().contiguous()
+        else:
+            expert_ids = expert_ids.contiguous()
+            
+        if weights.device.type != 'cpu':
+            if debug:
+                print(f"[KSFTExpertsCPU.backward] weights is on {weights.device}, moving to CPU", flush=True)
+            weights = weights.cpu().clone().contiguous()
+        else:
+            weights = weights.contiguous()
+            
+        # Create input_grad explicitly on CPU with explicit shape and dtype
+        # Use pin_memory=True like the rest of the codebase to ensure C++ can access it
+        try:
+            input_grad = torch.zeros(input_tensor.shape, dtype=input_tensor.dtype, device=torch.device('cpu'), pin_memory=True).contiguous()
+            if debug:
+                print(f"[KSFTExpertsCPU.backward] Created input_grad with pin_memory=True: device={input_grad.device}, ptr={input_grad.data_ptr()} ({input_grad.data_ptr()/(2**30):.2f} GB)", flush=True)
+        except Exception as e:
+            if debug:
+                print(f"[KSFTExpertsCPU.backward] Failed to create input_grad with pin_memory: {e}, falling back", flush=True)
+            input_grad = torch.zeros(input_tensor.shape, dtype=input_tensor.dtype, device=torch.device('cpu')).contiguous()
+            if debug:
+                print(f"[KSFTExpertsCPU.backward] Created input_grad without pin_memory: device={input_grad.device}, ptr={input_grad.data_ptr()} ({input_grad.data_ptr()/(2**30):.2f} GB)", flush=True)
+
+        # Validate tensor shapes, devices, and pointers
+        qlen = output_grad.size(0)
+        k = expert_ids.size(1)
+
+        if debug:
+            print(
+                f"[KSFTExpertsCPU.backward] layer_idx={layer_idx}, "
+                f"qlen={qlen}, k={k}, "
+                f"input_shape={tuple(input_tensor.shape)}, input_device={input_tensor.device}, "
+                f"output_grad_shape={tuple(output_grad.shape)}, output_grad_device={output_grad.device}, "
+                f"expert_ids_shape={tuple(expert_ids.shape)}, expert_ids_device={expert_ids.device}, "
+                f"weights_shape={tuple(weights.shape)}, weights_device={weights.device}",
+                flush=True,
             )
-        )
-        ctx.cpu_infer.sync()
+
+        assert qlen > 0, f"Invalid qlen: {qlen}"
+        assert k > 0, f"Invalid k: {k}"
+        assert expert_ids.size(0) == qlen, f"expert_ids size mismatch: {expert_ids.size(0)} != {qlen}"
+        assert weights.size(0) == qlen, f"weights size mismatch: {weights.size(0)} != {qlen}"
+        assert weights.size(1) == k, f"weights k mismatch: {weights.size(1)} != {k}"
+        
+        # Verify all tensors are on CPU before getting pointers
+        assert output_grad.device.type == 'cpu', f"output_grad must be on CPU, got {output_grad.device}"
+        assert input_tensor.device.type == 'cpu', f"input_tensor must be on CPU, got {input_tensor.device}"
+        assert expert_ids.device.type == 'cpu', f"expert_ids must be on CPU, got {expert_ids.device}"
+        assert weights.device.type == 'cpu', f"weights must be on CPU, got {weights.device}"
+
+        if debug:
+            # Get pointers and validate they're reasonable (not GPU addresses)
+            expert_ids_ptr = expert_ids.data_ptr()
+            weights_ptr = weights.data_ptr()
+            input_ptr = input_tensor.data_ptr()
+            grad_output_ptr = output_grad.data_ptr()
+            grad_input_ptr = input_grad.data_ptr()
+            
+            # Check if pointers look like GPU addresses (typically > 2^40 for modern GPUs)
+            GPU_THRESHOLD = 2**40  # ~1TB, reasonable threshold
+            
+            print("[KSFTExpertsCPU.backward] === Detailed Pointer Analysis ===", flush=True)
+            print(f"[KSFTExpertsCPU.backward] expert_ids: ptr={expert_ids_ptr} ({expert_ids_ptr/(2**30):.2f} GB), device={expert_ids.device}, is_contiguous={expert_ids.is_contiguous()}", flush=True)
+            print(f"[KSFTExpertsCPU.backward] weights: ptr={weights_ptr} ({weights_ptr/(2**30):.2f} GB), device={weights.device}, is_contiguous={weights.is_contiguous()}", flush=True)
+            print(f"[KSFTExpertsCPU.backward] input_tensor: ptr={input_ptr} ({input_ptr/(2**30):.2f} GB), device={input_tensor.device}, is_contiguous={input_tensor.is_contiguous()}", flush=True)
+            print(f"[KSFTExpertsCPU.backward] output_grad: ptr={grad_output_ptr} ({grad_output_ptr/(2**30):.2f} GB), device={output_grad.device}, is_contiguous={output_grad.is_contiguous()}", flush=True)
+            print(f"[KSFTExpertsCPU.backward] input_grad: ptr={grad_input_ptr} ({grad_input_ptr/(2**30):.2f} GB), device={input_grad.device}, is_contiguous={input_grad.is_contiguous()}", flush=True)
+            
+            # Check pointer validity
+            if grad_output_ptr > GPU_THRESHOLD:
+                print(f"[KSFTExpertsCPU.backward] ⚠️  WARNING: grad_output_ptr={grad_output_ptr} ({grad_output_ptr/(2**40):.2f} TB) exceeds threshold {GPU_THRESHOLD/(2**40):.2f} TB!", flush=True)
+                print(f"[KSFTExpertsCPU.backward]    This might be a valid CPU pointer on this system, or it could be invalid", flush=True)
+            if grad_input_ptr > GPU_THRESHOLD:
+                print(f"[KSFTExpertsCPU.backward] ⚠️  WARNING: grad_input_ptr={grad_input_ptr} ({grad_input_ptr/(2**40):.2f} TB) exceeds threshold!", flush=True)
+            if input_ptr > GPU_THRESHOLD:
+                print(f"[KSFTExpertsCPU.backward] ⚠️  WARNING: input_ptr={input_ptr} ({input_ptr/(2**40):.2f} TB) exceeds threshold!", flush=True)
+                
+            # Try to access the memory to see if it's valid
+            try:
+                test_access = output_grad[0, 0].item()
+                print(f"[KSFTExpertsCPU.backward] ✓ output_grad memory is accessible, first element: {test_access}", flush=True)
+            except Exception as e:
+                print(f"[KSFTExpertsCPU.backward] ✗ ERROR: Cannot access output_grad memory: {e}", flush=True)
+            
+            try:
+                test_access = input_grad[0, 0].item()
+                print(f"[KSFTExpertsCPU.backward] ✓ input_grad memory is accessible, first element: {test_access}", flush=True)
+            except Exception as e:
+                print(f"[KSFTExpertsCPU.backward] ✗ ERROR: Cannot access input_grad memory: {e}", flush=True)
+                
+            print(
+                "[KSFTExpertsCPU.backward] === Calling ctx.moe.backward with pointers ===",
+                flush=True,
+            )
+
+        bw_start = time.time()
+        if debug:
+            print(f"[KSFTExpertsCPU.backward] About to call ctx.moe.backward with:", flush=True)
+            print(f"  layer_idx={layer_idx}, qlen={qlen}, k={k}", flush=True)
+            print(f"  expert_ids_ptr={expert_ids.data_ptr()}", flush=True)
+            print(f"  weights_ptr={weights.data_ptr()}", flush=True)
+            print(f"  input_ptr={input_tensor.data_ptr()}", flush=True)
+            print(f"  grad_output_ptr={output_grad.data_ptr()}", flush=True)
+            print(f"  grad_input_ptr={input_grad.data_ptr()}", flush=True)
+            print(f"[KSFTExpertsCPU.backward] Calling ctx.cpu_infer.submit()...", flush=True)
+        
+        try:
+            ctx.cpu_infer.submit(
+                ctx.moe.backward(
+                    layer_idx,
+                    qlen,  # number of tokens
+                    k,     # number of experts per token
+                    expert_ids.data_ptr(),
+                    weights.data_ptr(),
+                    input_tensor.data_ptr(),
+                    output_grad.data_ptr(),
+                    input_grad.data_ptr(),
+                )
+            )
+            if debug:
+                print(f"[KSFTExpertsCPU.backward] ✓ ctx.cpu_infer.submit() completed", flush=True)
+        except Exception as e:
+            if debug:
+                print(f"[KSFTExpertsCPU.backward] ✗ ERROR in ctx.cpu_infer.submit(): {e}", flush=True)
+            raise
+        
+        if debug:
+            print(f"[KSFTExpertsCPU.backward] Calling ctx.cpu_infer.sync()...", flush=True)
+        try:
+            ctx.cpu_infer.sync()
+            if debug:
+                print(f"[KSFTExpertsCPU.backward] ✓ ctx.cpu_infer.sync() completed", flush=True)
+        except Exception as e:
+            if debug:
+                print(f"[KSFTExpertsCPU.backward] ✗ ERROR in ctx.cpu_infer.sync(): {e}", flush=True)
+            raise
         
         bw_end   = time.time()
         t_bw    = bw_end - bw_start

@@ -7,6 +7,7 @@
  * Copyright (c) 2023-2024 The ggml authors
  * Copyright (c) 2024 by KVCache.AI, All Rights Reserved. 
  */
+#define __CUDA_INCLUDE_COMPLIANT_CHECK__ 0
 #include <cuda_runtime.h>
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>

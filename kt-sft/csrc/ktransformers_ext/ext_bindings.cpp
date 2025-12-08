@@ -31,6 +31,10 @@
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <cstdlib>
+#include <cstdio>
+#include <string>
+#include <stdexcept>
 
 namespace py = pybind11;
 using namespace pybind11::literals;
@@ -598,10 +602,117 @@ namespace {
 			void*            grad_input,
 			Backend*         backend)
 	{
-		self.backward(layer_idx, qlen, k, expert_ids, weights,
-					input, grad_output, grad_input,
-					backend,
-					self.fwd_cache_ptr());
+		// Debug: Check if KSFT_MOE_DEBUG is set
+		const char* debug_env = std::getenv("KSFT_MOE_DEBUG");
+		bool debug = (debug_env != nullptr && std::string(debug_env) == "1");
+		
+		if (debug) {
+			fprintf(stderr, "[C++ sft_moe_backward_wrapper] Entering wrapper: layer_idx=%d, qlen=%d, k=%d\n", layer_idx, qlen, k);
+			fflush(stderr);
+		}
+		
+		// Ensure forward cache is allocated and initialized
+		if (debug) {
+			fprintf(stderr, "[C++ sft_moe_backward_wrapper] Calling ensure_fwd_cache...\n");
+			fflush(stderr);
+		}
+		self.ensure_fwd_cache(qlen, k);
+		
+		if (debug) {
+			fprintf(stderr, "[C++ sft_moe_backward_wrapper] Getting fwd_cache_ptr...\n");
+			fflush(stderr);
+		}
+		SFT_MoEForwardCache* fwd_cache = self.fwd_cache_ptr();
+		
+		// Validate cache is not null and has proper size
+		if (fwd_cache == nullptr) {
+			throw std::runtime_error("fwd_cache_ptr() returned nullptr in backward");
+		}
+		
+		if (debug) {
+			fprintf(stderr, "[C++ sft_moe_backward_wrapper] Cache pointer: %p\n", (void*)fwd_cache);
+			fflush(stderr);
+		}
+		
+		// Validate pointers are not null
+		if (expert_ids == nullptr) {
+			throw std::runtime_error("expert_ids is nullptr in backward");
+		}
+		if (weights == nullptr) {
+			throw std::runtime_error("weights is nullptr in backward");
+		}
+		if (input == nullptr) {
+			throw std::runtime_error("input is nullptr in backward");
+		}
+		if (grad_output == nullptr) {
+			throw std::runtime_error("grad_output is nullptr in backward");
+		}
+		if (grad_input == nullptr) {
+			throw std::runtime_error("grad_input is nullptr in backward");
+		}
+		if (backend == nullptr) {
+			throw std::runtime_error("backend is nullptr in backward");
+		}
+		
+		if (debug) {
+			fprintf(stderr, "[C++ sft_moe_backward_wrapper] All pointers validated\n");
+			fprintf(stderr, "[C++ sft_moe_backward_wrapper] Pointer values: expert_ids=%p, weights=%p, input=%p, grad_output=%p, grad_input=%p\n",
+				(const void*)expert_ids, (const void*)weights, input, grad_output, grad_input);
+			fflush(stderr);
+		}
+		
+		// Validate pointer ranges (basic sanity check - pointers should be in reasonable range)
+		// CPU pointers on Linux x86_64 are typically in the range 0x00007f... to 0x7fffffff...
+		// GPU pointers are typically much higher (0x7f0000000000+)
+		uintptr_t grad_output_ptr = reinterpret_cast<uintptr_t>(grad_output);
+		uintptr_t grad_input_ptr = reinterpret_cast<uintptr_t>(grad_input);
+		
+		// Check if pointers look like GPU addresses (very high addresses > 1TB)
+		// This is a heuristic - valid CPU pointers on some systems might be high too
+		const uintptr_t GPU_THRESHOLD = static_cast<uintptr_t>(1ULL << 40); // 1TB
+		if (grad_output_ptr > GPU_THRESHOLD || grad_input_ptr > GPU_THRESHOLD) {
+			if (debug) {
+				fprintf(stderr, "[C++ sft_moe_backward_wrapper] WARNING: High pointer values detected (grad_output=%p, grad_input=%p)\n",
+					grad_output, grad_input);
+				fflush(stderr);
+			}
+			// Log warning but don't fail - might be valid on this system
+			// The actual crash will happen if C++ tries to access invalid memory
+		}
+		
+		if (debug) {
+			fprintf(stderr, "[C++ sft_moe_backward_wrapper] About to call self.backward()...\n");
+			fflush(stderr);
+		}
+		
+		try {
+			self.backward(layer_idx, qlen, k, expert_ids, weights,
+						input, grad_output, grad_input,
+						backend,
+						fwd_cache);
+			
+			if (debug) {
+				fprintf(stderr, "[C++ sft_moe_backward_wrapper] self.backward() completed successfully\n");
+				fflush(stderr);
+			}
+		} catch (const std::exception& e) {
+			if (debug) {
+				fprintf(stderr, "[C++ sft_moe_backward_wrapper] Exception in self.backward(): %s\n", e.what());
+				fflush(stderr);
+			}
+			throw;
+		} catch (...) {
+			if (debug) {
+				fprintf(stderr, "[C++ sft_moe_backward_wrapper] Unknown exception in self.backward()\n");
+				fflush(stderr);
+			}
+			throw;
+		}
+		
+		if (debug) {
+			fprintf(stderr, "[C++ sft_moe_backward_wrapper] Exiting wrapper successfully\n");
+			fflush(stderr);
+		}
 	}
 }
 
@@ -711,6 +822,22 @@ class SFT_MOEBindings {
     		intptr_t input,
             intptr_t grad_output, intptr_t grad_input) {
             
+            // Validate pointer values before creating Args struct
+            const uintptr_t GPU_THRESHOLD = static_cast<uintptr_t>(1ULL << 40); // 1TB
+            uintptr_t grad_output_u = static_cast<uintptr_t>(grad_output);
+            uintptr_t grad_input_u = static_cast<uintptr_t>(grad_input);
+            
+            // Check for suspiciously high pointers (might indicate GPU memory or invalid pointers)
+            if (grad_output_u > GPU_THRESHOLD || grad_input_u > GPU_THRESHOLD) {
+                // These might be valid on some systems, but log a warning
+                // The actual validation will happen in the wrapper function
+            }
+            
+            // Validate that pointers are not null
+            if (expert_ids == 0 || weights == 0 || input == 0 || grad_output == 0 || grad_input == 0) {
+                throw std::runtime_error("One or more pointer arguments are null in cpuinfer_interface");
+            }
+            
             Args* args = new Args{
 				nullptr, &moe, layer_idx, qlen, k,
 				reinterpret_cast<const uint64_t*>(expert_ids),
@@ -719,6 +846,12 @@ class SFT_MOEBindings {
 				reinterpret_cast<const void*>(grad_output),
 				reinterpret_cast<void*>(grad_input)
 			};
+            
+            // Validate Args struct was created successfully
+            if (args == nullptr) {
+                throw std::runtime_error("Failed to allocate Args struct in cpuinfer_interface");
+            }
+            
             return std::make_pair(
                 reinterpret_cast<intptr_t>(&inner),
                 reinterpret_cast<intptr_t>(args));

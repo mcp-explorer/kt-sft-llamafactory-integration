@@ -71,6 +71,14 @@ class SFT_MOE {
     void* gate_proj_;  // [expert_num * intermediate_size * hidden_size ( /32 if quantized)]
     void* up_proj_;    // [expert_num * intermediate_size * hidden_size ( /32 if quantized)]
     void* down_proj_;  // [expert_num * hidden_size * intermediate_size ( /32 if quantized)]
+    
+    // CPU-accessible copies of expert weights (if original pointers are not accessible)
+    void* gate_proj_cpu_;  // CPU-accessible copy of gate_proj_
+    void* up_proj_cpu_;    // CPU-accessible copy of up_proj_
+    void* down_proj_cpu_;  // CPU-accessible copy of down_proj_
+    bool owns_gate_proj_cpu_;  // Whether we allocated gate_proj_cpu_ (need to free)
+    bool owns_up_proj_cpu_;    // Whether we allocated up_proj_cpu_ (need to free)
+    bool owns_down_proj_cpu_;  // Whether we allocated down_proj_cpu_ (need to free)
 
     float* transpose_buffer_fp32_;  // [expert_num * intermediate_size * hidden_size]
     uint8_t* transpose_buffer_;     // [expert_num * intermediate_size * hidden_size]

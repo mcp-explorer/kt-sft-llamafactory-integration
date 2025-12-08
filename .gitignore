@@ -1,32 +1,141 @@
-__pycache__
-build
-.vscode
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
 *.so
-*.cache
-server.db
-logs
-node_modules
-*.nsys-rep
-.vs/
-*pycache*
-*build/
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+
+# Virtual environments
+.env
+.venv
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
+
+# Build artifacts
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
 compile_commands.json
-*.egg-info*
-*dist/
+*.cache
+*.nsys-rep
+
+# Model files (too large for git)
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.pkl
+*.h5
+*.ckpt
+*.gguf
+*.ggml
+*.model
+deepseek-ai/
+*.safetensors.index.json
+
+# Training outputs
+wandb/
+saves/
+output/
+logs/
+*.log
+training.log
+swanlog/
+llamaboard_cache/
+llamaboard_config/
+hf_cache/
+ms_cache/
+om_cache/
+
+# Data and datasets (if large)
+data/*.jsonl
+data/*.parquet
+data/*.arrow
+*.jsonl
+*.parquet
+*.arrow
+
+# Test outputs
+test_adapter/demo_*
+test_adapter/*.json
+*.txt
+!requirements*.txt
+!CMakeLists.txt
+!README*.txt
+
+# Third party (usually large)
+third_party/
+custom_flashinfer/build/
+custom_flashinfer/*.egg-info/
+
+# Compiled extensions
+*.cpython-*.so
+KTransformersOps.*.so
+cpuinfer_ext.*.so
+vLLMMarlin.*.so
+
+# Temporary files
+tmp/
+tmp_*/
+*.tmp
+*.bak
+*.swp
+
+# Documentation builds
+book/
+docs/_build/
+site/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+.coverage.*
+
+# Node (if any)
+node_modules/
+
+# Archive (if not needed)
+archive/
+
+# Specific project ignores
 ktransformers/server/local_store/
 ktransformers/server_test1.db
-*.patch
-img/
-tmp*.txt
-test.txt
-book
 ktransformers/tests/chat_txt.txt
 mmlu_result*
-ktransformers/ktransformers_ext/cuda_musa/
-test_prompt.txt
-csrc/demo
-build*
-CMakeFiles/
-kvc2/
-sched/
+graphviz/
+compute_graph*
+*_graph
+debug/
+
+# Keep some important files
+!requirements*.txt
+!setup.py
+!pyproject.toml
+!CMakeLists.txt
+!README*.md
+!LICENSE
+!.gitignore
