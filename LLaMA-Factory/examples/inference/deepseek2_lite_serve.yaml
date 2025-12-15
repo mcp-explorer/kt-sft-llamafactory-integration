@@ -1,0 +1,21 @@
+### model
+model_name_or_path: deepseek-ai/DeepSeek-V2-Lite
+adapter_name_or_path: saves/Kllama_deepseekV2Lite
+trust_remote_code: true
+
+### method
+stage: sft
+finetuning_type: lora
+
+### dataset
+template: deepseek
+
+### ktransformers
+infer_backend: ktransformers  # Required when use_kt: true
+use_kt: true
+# Use sft rule for fine-tuned models
+# If you have AMX support (lscpu | grep amx), use DeepSeek-V2-Lite-Chat-sft-amx.yaml instead
+kt_optimize_rule: ../kt-sft/ktransformers/optimize/optimize_rules/DeepSeek-V2-Lite-Chat-sft.yaml
+cpu_infer: 16
+chunk_size: 8192
+

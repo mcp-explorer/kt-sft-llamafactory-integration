@@ -1,0 +1,28 @@
+name: kt-serve
+channels:
+  - conda-forge
+  - nvidia
+  - defaults
+dependencies:
+  - python=3.12
+  - libstdcxx-ng  # Provides GLIBCXX_3.4.32
+  - gcc_impl_linux-64
+  - pip
+  - pip:
+    # PyTorch with CUDA 12.8 support
+    - torch==2.7.0
+    - torchvision
+    - --index-url https://download.pytorch.org/whl/cu128
+    
+    # KTransformers wheel
+    - https://github.com/kvcache-ai/ktransformers/releases/download/v0.4.1/ktransformers-0.4.1+cu128torch27fancy-cp312-cp312-linux_x86_64.whl
+    
+    # Note: Flash-Attention and cuda-runtime need to be installed separately
+    # due to ABI checking and conda channel requirements
+
+# Note: After creating environment, run:
+#   conda activate kt-serve
+#   conda install -y -c nvidia/label/cuda-11.8.0 cuda-runtime
+#   # Check ABI: python -c "import torch; print(torch._C._GLIBCXX_USE_CXX11_ABI)"
+#   # Install matching flash-attention wheel
+
