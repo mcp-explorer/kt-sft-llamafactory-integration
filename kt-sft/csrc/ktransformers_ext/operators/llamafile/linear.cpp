@@ -7,7 +7,21 @@
  * @LastEditTime : 2024-08-15 07:45:18
  * @Copyright (c) 2024 by KVCache.AI, All Rights Reserved.
  **/
+#include "llama.cpp/ggml.h"
+#include "llama.cpp/ggml-impl.h"
 #include "linear.h"
+#include "ggml-cpu.h"
+
+// Forward declare if not defined
+#ifndef GGML_COMPUTE_PARAMS_DEFINED
+#include <cstdint>
+struct ggml_compute_params {
+    int64_t ith;
+    int64_t nth;
+    void* threadpool;
+};
+#define GGML_COMPUTE_PARAMS_DEFINED
+#endif
 
 Linear::Linear(LinearConfig config) {
     config_ = config;
@@ -15,7 +29,7 @@ Linear::Linear(LinearConfig config) {
 
     std::vector<std::pair<void**, uint64_t>> mem_requests;
     mem_requests.push_back({(void**)&input_fp32_, sizeof(float) * config_.group_max_len * config_.input_size});
-    mem_requests.push_back({(void**)&proj_input_, config_.group_max_len * config_.input_size * ggml_type_size(ggml_internal_get_type_traits(config_.proj_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(config_.proj_type).vec_dot_type)});
+    mem_requests.push_back({(void**)&proj_input_, config_.group_max_len * config_.input_size * ggml_type_size(ggml_get_type_traits_cpu(config_.proj_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.proj_type)->vec_dot_type)});
     mem_requests.push_back({(void**)&proj_output_, sizeof(float) * config_.group_max_len * config_.output_size});
     shared_mem_buffer.alloc(this, mem_requests);
 }
@@ -41,11 +55,11 @@ void Linear::warm_up(Backend *backend) {
 
 void Linear::forward_many(int qlen, const void* input, void* output, Backend* backend) {
     const void* proj_input_ptr;
-    if (config_.hidden_type == ggml_internal_get_type_traits(config_.proj_type).vec_dot_type) {
+    if (config_.hidden_type == ggml_get_type_traits_cpu(config_.proj_type)->vec_dot_type) {
         proj_input_ptr = input;
     } else {
         to_float(input, input_fp32_, qlen * config_.input_size, config_.hidden_type);
-        from_float(input_fp32_, proj_input_, qlen * config_.input_size, ggml_internal_get_type_traits(config_.proj_type).vec_dot_type);
+        from_float(input_fp32_, proj_input_, qlen * config_.input_size, ggml_get_type_traits_cpu(config_.proj_type)->vec_dot_type);
         proj_input_ptr = proj_input_;
     }
     int nth = config_.output_size / config_.stride;
@@ -53,7 +67,11 @@ void Linear::forward_many(int qlen, const void* input, void* output, Backend* ba
         int ith = task_id;
         void* proj_ptr = (uint8_t*)proj_ + ith * config_.stride * config_.input_size * ggml_type_size(config_.proj_type) / ggml_blck_size(config_.proj_type);
         float* proj_output_ptr = proj_output_ + ith * config_.stride;
-        llamafile_sgemm(config_.stride, qlen, config_.input_size / ggml_blck_size(config_.proj_type), proj_ptr, config_.input_size / ggml_blck_size(config_.proj_type), proj_input_ptr, config_.input_size / ggml_blck_size(config_.proj_type), proj_output_ptr, config_.output_size, 0, 1, GGML_TASK_TYPE_COMPUTE, config_.proj_type, ggml_internal_get_type_traits(config_.proj_type).vec_dot_type, GGML_TYPE_F32, GGML_PREC_DEFAULT);
+        ggml_compute_params params;
+        params.ith = ith;
+        params.nth = nth;
+        params.threadpool = nullptr;
+        llamafile_sgemm(&params, config_.stride, qlen, config_.input_size / ggml_blck_size(config_.proj_type), proj_ptr, config_.input_size / ggml_blck_size(config_.proj_type), proj_input_ptr, config_.input_size / ggml_blck_size(config_.proj_type), proj_output_ptr, config_.output_size, config_.proj_type, ggml_get_type_traits_cpu(config_.proj_type)->vec_dot_type, GGML_TYPE_F32);
         if (config_.stride % ggml_blck_size(config_.hidden_type) == 0) {
             for (int i = 0; i < qlen; i++) {
                 float* output_fp32_ptr = proj_output_ + i * config_.output_size + ith * config_.stride;

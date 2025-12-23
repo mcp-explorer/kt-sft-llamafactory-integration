@@ -10,12 +10,13 @@ services:
     ports:
       - "7860:7860"
       - "8000:8000"
-<<<<<<< HEAD
     volumes:
       - /home/sean/Documents/ktransformers/deepseek-ai:/app/models/deepseek-ai:ro
       - /home/sean/Documents/ktransformers/LLaMA-Factory/saves:/app/saves:ro
-=======
->>>>>>> 87c31a7 (Add kt-sft and LLaMA-Factory integration changes)
+      - /home/sean/Documents/ktransformers/kt-sft:/kt-sft:rw
+    environment:
+      - LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda-12.4/lib64:/opt/conda/lib/python3.11/site-packages:/opt/conda/lib/python3.11/site-packages/torch/lib
+      - CUDA_HOME=/usr/local/cuda
     ipc: host
     tty: true
     # shm_size: "16gb"  # ipc: host is set
@@ -28,4 +29,8 @@ services:
           - driver: nvidia
             count: "all"
             capabilities: [ gpu ]
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
     restart: unless-stopped

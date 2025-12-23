@@ -5,9 +5,24 @@ project(cpuinfer_ext VERSION 0.1.0)
 set(CMAKE_CXX_STANDARD 17)
 
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -ffast-math -fopenmp")
+# Enable AddressSanitizer if requested via environment variable
+if(DEFINED ENV{USE_ASAN} AND "$ENV{USE_ASAN}" STREQUAL "1")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O1 -fsanitize=address -fno-omit-frame-pointer -fno-optimize-sibling-calls")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -O1 -fsanitize=address -fno-omit-frame-pointer -fno-optimize-sibling-calls")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=address")
+    set(CMAKE_BUILD_TYPE "Debug")
+    message(STATUS "AddressSanitizer enabled")
+else()
+    # Enable debug symbols for GDB debugging
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O0 -ffast-math -fno-finite-math-only -fopenmp")
+    set(CMAKE_BUILD_TYPE "Debug")
+endif()
+# Handle CXX11 ABI - set default if not provided
+if(NOT DEFINED _GLIBCXX_USE_CXX11_ABI)
+    set(_GLIBCXX_USE_CXX11_ABI 1)
+endif()
 add_compile_definitions(_GLIBCXX_USE_CXX11_ABI=${_GLIBCXX_USE_CXX11_ABI})
-set(CMAKE_BUILD_TYPE "Release")
 # set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -ffast-math -fopenmp")
 # set(CMAKE_BUILD_TYPE "Debug")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -282,10 +297,66 @@ list(APPEND CMAKE_MODULE_PATH "${MUSA_PATH}/cmake")
 add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:${ARCH_FLAGS}>")
 add_compile_options("$<$<COMPILE_LANGUAGE:C>:${ARCH_FLAGS}>")
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/pybind11 ${CMAKE_CURRENT_BINARY_DIR}/third_party/pybind11)
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/llama.cpp ${CMAKE_CURRENT_BINARY_DIR}/third_party/llama.cpp)
+# Explicitly find Python3 before pybind11
+# Set Python paths explicitly using PYTHON_EXECUTABLE
+if(DEFINED PYTHON_EXECUTABLE)
+    execute_process(
+        COMMAND ${PYTHON_EXECUTABLE} -c "import sysconfig; print(sysconfig.get_path('include'))"
+        OUTPUT_VARIABLE _PYTHON_INCLUDE_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    execute_process(
+        COMMAND ${PYTHON_EXECUTABLE} -c "import sys; print(sys.executable)"
+        OUTPUT_VARIABLE _PYTHON_EXECUTABLE
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    execute_process(
+        COMMAND ${PYTHON_EXECUTABLE} -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR') or '')"
+        OUTPUT_VARIABLE _PYTHON_LIB_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if(_PYTHON_INCLUDE_DIR)
+        set(Python3_INCLUDE_DIRS ${_PYTHON_INCLUDE_DIR} CACHE PATH "Python3 include directory")
+        set(Python3_INCLUDE_DIR ${_PYTHON_INCLUDE_DIR} CACHE PATH "Python3 include directory")
+    endif()
+    if(_PYTHON_EXECUTABLE)
+        set(Python3_EXECUTABLE ${_PYTHON_EXECUTABLE} CACHE FILEPATH "Python3 executable")
+    endif()
+    if(_PYTHON_LIB_DIR)
+        find_library(Python3_LIBRARY python3.11 PATHS ${_PYTHON_LIB_DIR} NO_DEFAULT_PATH)
+        if(Python3_LIBRARY)
+            set(Python3_LIBRARIES ${Python3_LIBRARY} CACHE FILEPATH "Python3 library")
+        endif()
+    endif()
+endif()
+# Find Python3 with Development component if possible
+find_package(Python3 COMPONENTS Interpreter Development QUIET)
+if(NOT Python3_Development_FOUND)
+    # Fallback: find just Interpreter and set paths manually
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    if(NOT Python3_INCLUDE_DIRS)
+        execute_process(
+            COMMAND ${Python3_EXECUTABLE} -c "import sysconfig; print(sysconfig.get_path('include'))"
+            OUTPUT_VARIABLE Python3_INCLUDE_DIRS
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+        )
+        set(Python3_INCLUDE_DIRS ${Python3_INCLUDE_DIRS} CACHE PATH "Python3 include directory")
+    endif()
+    # Set Development as found since we have the headers
+    set(Python3_Development_FOUND TRUE)
+    set(Python3_Development_MODULE_FOUND TRUE)
+endif()
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/pybind11 ${CMAKE_CURRENT_BINARY_DIR}/third_party/pybind11)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/llama.cpp ${CMAKE_CURRENT_BINARY_DIR}/third_party/llama.cpp)
+
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../third_party)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/llama.cpp/ggml/src/ggml-cpu)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/llama.cpp)
 if (WIN32)
     include_directories("$ENV{CUDA_PATH}/include")
     add_compile_definitions(KTRANSFORMERS_USE_CUDA=1)
@@ -363,7 +434,7 @@ add_custom_target(
 )
 
 
-add_library(llamafile STATIC ${SOURCE_DIR4})
+# add_library(llamafile STATIC ${SOURCE_DIR4})  # Commented out - handled by llama.cpp build
 
 message(STATUS "CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
 message(STATUS "ARCH_FLAGS: ${ARCH_FLAGS}")

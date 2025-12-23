@@ -531,34 +531,85 @@ class KSFTExpertsCPU(torch.autograd.Function):
                 print(f"  down: type={type(self.down)}, shape={self.down.shape if hasattr(self.down, 'shape') else 'N/A'}")
         
         # Ensure tensors are on CPU and contiguous
+        # CRITICAL: Must ensure CPU transfer completes and memory is accessible before getting pointers
         if isinstance(self.gate, torch.Tensor):
+            original_device = self.gate.device
             if self.gate.device.type != 'cpu':
-                print(f"[KSFTExpertsCPU.load] WARNING: gate tensor is on {self.gate.device}, moving to CPU")
-                self.gate = self.gate.cpu()
-            if not self.gate.is_contiguous():
-                print(f"[KSFTExpertsCPU.load] WARNING: gate tensor is not contiguous, making contiguous")
-                self.gate = self.gate.contiguous()
+                if debug:
+                    print(f"[KSFTExpertsCPU.load] WARNING: gate tensor is on {self.gate.device}, moving to CPU")
+                # Move to CPU - use clone() to ensure it's a new tensor on CPU, not a view
+                self.gate = self.gate.cpu().clone().contiguous()
+                # Force synchronization to ensure CPU transfer is complete
+                if original_device.type == 'cuda':
+                    torch.cuda.synchronize()
+                elif hasattr(torch, 'xpu') and original_device.type == 'xpu':
+                    torch.xpu.synchronize()
+            else:
+                # Already on CPU, just ensure contiguous
+                if not self.gate.is_contiguous():
+                    if debug:
+                        print(f"[KSFTExpertsCPU.load] WARNING: gate tensor is not contiguous, making contiguous")
+                    self.gate = self.gate.contiguous()
+            # Verify it's actually on CPU
+            if self.gate.device.type != 'cpu':
+                raise RuntimeError(f"gate tensor is still on {self.gate.device} after CPU conversion!")
             
         if isinstance(self.up, torch.Tensor):
+            original_device = self.up.device
             if self.up.device.type != 'cpu':
-                print(f"[KSFTExpertsCPU.load] WARNING: up tensor is on {self.up.device}, moving to CPU")
-                self.up = self.up.cpu()
-            if not self.up.is_contiguous():
-                print(f"[KSFTExpertsCPU.load] WARNING: up tensor is not contiguous, making contiguous")
-                self.up = self.up.contiguous()
+                if debug:
+                    print(f"[KSFTExpertsCPU.load] WARNING: up tensor is on {self.up.device}, moving to CPU")
+                self.up = self.up.cpu().clone().contiguous()
+                # Force synchronization
+                if original_device.type == 'cuda':
+                    torch.cuda.synchronize()
+                elif hasattr(torch, 'xpu') and original_device.type == 'xpu':
+                    torch.xpu.synchronize()
+            else:
+                if not self.up.is_contiguous():
+                    if debug:
+                        print(f"[KSFTExpertsCPU.load] WARNING: up tensor is not contiguous, making contiguous")
+                    self.up = self.up.contiguous()
+            if self.up.device.type != 'cpu':
+                raise RuntimeError(f"up tensor is still on {self.up.device} after CPU conversion!")
             
         if isinstance(self.down, torch.Tensor):
+            original_device = self.down.device
             if self.down.device.type != 'cpu':
-                print(f"[KSFTExpertsCPU.load] WARNING: down tensor is on {self.down.device}, moving to CPU")
-                self.down = self.down.cpu()
-            if not self.down.is_contiguous():
-                print(f"[KSFTExpertsCPU.load] WARNING: down tensor is not contiguous, making contiguous")
-                self.down = self.down.contiguous()
+                if debug:
+                    print(f"[KSFTExpertsCPU.load] WARNING: down tensor is on {self.down.device}, moving to CPU")
+                self.down = self.down.cpu().clone().contiguous()
+                # Force synchronization
+                if original_device.type == 'cuda':
+                    torch.cuda.synchronize()
+                elif hasattr(torch, 'xpu') and original_device.type == 'xpu':
+                    torch.xpu.synchronize()
+            else:
+                if not self.down.is_contiguous():
+                    if debug:
+                        print(f"[KSFTExpertsCPU.load] WARNING: down tensor is not contiguous, making contiguous")
+                    self.down = self.down.contiguous()
+            if self.down.device.type != 'cpu':
+                raise RuntimeError(f"down tensor is still on {self.down.device} after CPU conversion!")
         
         # Get pointers after ensuring CPU and contiguous
-        # Handle both PyTorch tensors and numpy arrays
+        # CRITICAL: Verify pointers are valid CPU memory addresses before passing to C++
         if isinstance(self.gate, torch.Tensor):
+            # Double-check device before getting pointer
+            if self.gate.device.type != 'cpu':
+                raise RuntimeError(f"Cannot get pointer from non-CPU tensor: gate is on {self.gate.device}")
             gate_ptr = self.gate.data_ptr()
+            # Verify pointer is reasonable (not null, not obviously GPU address)
+            if gate_ptr == 0:
+                raise RuntimeError("gate.data_ptr() returned null pointer!")
+            if debug:
+                # Try to read first byte to verify it's accessible CPU memory
+                try:
+                    import ctypes
+                    test_ptr = ctypes.cast(gate_ptr, ctypes.POINTER(ctypes.c_uint8))
+                    _ = test_ptr[0]  # Try to read
+                except Exception as e:
+                    print(f"[KSFTExpertsCPU.load] WARNING: Could not verify gate pointer accessibility: {e}")
         else:
             # numpy array
             gate_ptr = ctypes.addressof(
@@ -566,7 +617,11 @@ class KSFTExpertsCPU(torch.autograd.Function):
             )
         
         if isinstance(self.up, torch.Tensor):
+            if self.up.device.type != 'cpu':
+                raise RuntimeError(f"Cannot get pointer from non-CPU tensor: up is on {self.up.device}")
             up_ptr = self.up.data_ptr()
+            if up_ptr == 0:
+                raise RuntimeError("up.data_ptr() returned null pointer!")
         else:
             # numpy array
             up_ptr = ctypes.addressof(
@@ -574,7 +629,11 @@ class KSFTExpertsCPU(torch.autograd.Function):
             )
         
         if isinstance(self.down, torch.Tensor):
+            if self.down.device.type != 'cpu':
+                raise RuntimeError(f"Cannot get pointer from non-CPU tensor: down is on {self.down.device}")
             down_ptr = self.down.data_ptr()
+            if down_ptr == 0:
+                raise RuntimeError("down.data_ptr() returned null pointer!")
         else:
             # numpy array
             down_ptr = ctypes.addressof(
@@ -613,7 +672,52 @@ class KSFTExpertsCPU(torch.autograd.Function):
                 self.down_type,
                 hidden_type, # TODO: get from model.dtype
             )
-            self.moe = SFT_MOE(moe_config)
+            debug = os.environ.get("KSFT_MOE_DEBUG", "0") == "1"
+            if debug:
+                print(f"[KSFTExpertsCPU.load] About to create SFT_MOE object for key={self.key}", flush=True)
+                print(f"[KSFTExpertsCPU.load] moe_config created: n_routed_experts={n_routed_experts}, hidden_size={self.config.hidden_size}, moe_intermediate_size={self.config.moe_intermediate_size}", flush=True)
+                print(f"[KSFTExpertsCPU.load] Pointers: gate_ptr={gate_ptr}, up_ptr={up_ptr}, down_ptr={down_ptr}", flush=True)
+            try:
+                if debug:
+                    print(f"[KSFTExpertsCPU.load] Calling SFT_MOE constructor...", flush=True)
+                # CRITICAL: Store config reference to keep it alive during construction
+                # This ensures pybind11's keep_alive has something to reference
+                self._moe_config_ref = moe_config
+                
+                # Try factory function first (better pybind11 compatibility), fallback to direct constructor
+                try:
+                    # Factory function returns unique_ptr which pybind11 handles better
+                    moe_obj = SFT_MOE.create(moe_config)
+                    if debug:
+                        print(f"[KSFTExpertsCPU.load] ✓ SFT_MOE created via factory function for key={self.key}", flush=True)
+                except AttributeError:
+                    # Fallback to direct constructor if factory function not available
+                    if debug:
+                        print(f"[KSFTExpertsCPU.load] Factory function not available, using direct constructor...", flush=True)
+                    moe_obj = SFT_MOE(moe_config)
+                    if debug:
+                        print(f"[KSFTExpertsCPU.load] ✓ SFT_MOE created via direct constructor for key={self.key}", flush=True)
+                
+                if debug:
+                    print(f"[KSFTExpertsCPU.load] moe_obj={moe_obj}", flush=True)
+                    print(f"[KSFTExpertsCPU.load] About to assign self.moe...", flush=True)
+                # Small delay to ensure object is fully constructed
+                import time
+                time.sleep(0.001)  # 1ms delay
+                self.moe = moe_obj
+                # Keep config reference alive as long as moe object exists
+                # This ensures pybind11's keep_alive works correctly
+                if debug:
+                    print(f"[KSFTExpertsCPU.load] ✓ SFT_MOE object assigned successfully for key={self.key}", flush=True)
+                    print(f"[KSFTExpertsCPU.load] ✓ Config reference stored: {self._moe_config_ref}", flush=True)
+                    # Force a reference to ensure object stays alive
+                    _ = self.moe
+                    print(f"[KSFTExpertsCPU.load] ✓ Object reference verified", flush=True)
+            except Exception as e:
+                print(f"[KSFTExpertsCPU.load] ✗ Exception during SFT_MOE creation: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+                raise
         elif self.backend == "AMXBF16":
             print("GO INTO AMXBF16!!")
             from cpuinfer_ext.sft_moe import SFT_AMX_MOEConfig, SFT_AMXBF16_MOE
@@ -665,10 +769,30 @@ class KSFTExpertsCPU(torch.autograd.Function):
             KSFTExpertsCPU.expert_ids_cpu = torch.zeros((num_experts_per_tok), device="cpu", dtype=torch.long, pin_memory=True)
             KSFTExpertsCPU.weights_cpu = torch.zeros((num_experts_per_tok), device="cpu", dtype=torch.float32, pin_memory=True)
             KSFTExpertsCPU.output_cpu = torch.zeros((self.config.hidden_size), device="cpu", pin_memory=True, dtype=torch.bfloat16)
-            
+        
+        # Keep references to tensors to prevent garbage collection
+        # until C++ constructor has copied the data
+        # Store as instance variables to keep them alive
+        debug = os.environ.get("KSFT_MOE_DEBUG", "0") == "1"
+        if debug:
+            print(f"[KSFTExpertsCPU.load] Storing tensor references for key={self.key}")
+        self._gate_tensor_ref = self.gate
+        self._up_tensor_ref = self.up
+        self._down_tensor_ref = self.down
+        
+        if debug:
+            print(f"[KSFTExpertsCPU.load] ✓ Tensor references stored for key={self.key}")
+            print(f"[KSFTExpertsCPU.load] About to clear original references...")
+        
+        # Clear original references after keeping copies
+        # The C++ constructor will copy the data, so we can clear Python references
         self.gate = None
         self.up = None
         self.down = None
+        
+        if debug:
+            print(f"[KSFTExpertsCPU.load] ✓ Original references cleared for key={self.key}")
+            print(f"[KSFTExpertsCPU.load] load() method completing for key={self.key}")
             
     def submit_for_one_decode(self, input_tensor, expert_ids, weights):
         KSFTExpertsCPU.input_tensor_cpu.copy_(input_tensor, non_blocking=True)

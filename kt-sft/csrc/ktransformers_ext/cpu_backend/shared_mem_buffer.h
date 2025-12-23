@@ -15,6 +15,7 @@
  #include <cstdlib>
  #include <map>
  #include <vector>
+ #include <mutex>
  
  class SharedMemBuffer {
     public:
@@ -27,9 +28,11 @@
     private:
      void* buffer_;
      uint64_t size_;
+     uint64_t current_offset_;  // Track current usage offset to avoid reallocation
      std::map<void*, std::vector<std::vector<std::pair<void**, uint64_t>>>> hist_requests_;
- 
-     void arrange(std::vector<std::pair<void**, uint64_t>> requests);
+     std::mutex mutex_;  // Protect buffer reallocation
+
+     void arrange(std::vector<std::pair<void**, uint64_t>> requests, uint64_t start_offset = 0);
  };
  
  static SharedMemBuffer shared_mem_buffer;

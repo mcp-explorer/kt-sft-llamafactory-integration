@@ -22,6 +22,7 @@
 #include "llama.cpp/ggml-impl.h"
 #include "llama.cpp/ggml-quants.h"
 #include "llama.cpp/ggml.h"
+#include "ggml-cpu.h"
 #include "llamafile/sgemm.h"
 
 struct LinearConfig {

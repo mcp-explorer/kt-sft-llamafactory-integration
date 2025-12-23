@@ -22,6 +22,7 @@
 #include "llama.cpp/ggml-impl.h"
 #include "llama.cpp/ggml-quants.h"
 #include "llama.cpp/ggml.h"
+#include "ggml-cpu.h"
 #include "llamafile/sgemm.h"
 #include "sft_moe_forward_cache.h"
 
@@ -94,12 +95,12 @@ class SFT_MOE {
     #endif
 
     float* s_input_fp32_;                      // [hidden_size]
-    uint8_t* s_gate_input_;                    // [hidden_size * ggml_type_size(ggml_internal_get_type_traits(gate_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(gate_type).vec_dot_type)]
-    uint8_t* s_up_input_;                      // [hidden_size * ggml_type_size(ggml_internal_get_type_traits(up_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(up_type).vec_dot_type)]
+    uint8_t* s_gate_input_;                    // [hidden_size * ggml_type_size(ggml_get_type_traits_cpu(gate_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(gate_type)->vec_dot_type)]
+    uint8_t* s_up_input_;                      // [hidden_size * ggml_type_size(ggml_get_type_traits_cpu(up_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(up_type)->vec_dot_type)]
     std::vector<float*> s_gate_output_;        // [routed_expert_num, intermediate_size]
     std::vector<float*> s_up_output_;          // [routed_expert_num, intermediate_size]
     std::vector<float*> s_intermediate_fp32_;  // [routed_expert_num, intermediate_size]
-    std::vector<uint8_t*> s_down_input_;       // [routed_expert_num, intermediate_size * ggml_type_size(ggml_internal_get_type_traits(down_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(down_type).vec_dot_type)]
+    std::vector<uint8_t*> s_down_input_;       // [routed_expert_num, intermediate_size * ggml_type_size(ggml_get_type_traits_cpu(down_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(down_type)->vec_dot_type)]
     std::vector<float*> s_down_output_;        // [routed_expert_num, hidden_size]
     float* s_output_fp32_;                     // [hidden_size]
 
@@ -113,14 +114,14 @@ class SFT_MOE {
     float* s_input_grad_fp32_;                     // [hidden_size]
 
     std::vector<float*> m_input_fp32_;    // [group_max_len, hidden_size]
-    std::vector<uint8_t*> m_gate_input_;  // [group_max_len, hidden_size * ggml_type_size(ggml_internal_get_type_traits(gate_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(gate_type).vec_dot_type)]
-    std::vector<uint8_t*> m_up_input_;    // [group_max_len, hidden_size * ggml_type_size(ggml_internal_get_type_traits(up_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(up_type).vec_dot_type)]
-    uint8_t* m_local_gate_input_;         // [routed_expert_num * group_max_len * hidden_size * ggml_type_size(ggml_internal_get_type_traits(gate_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(gate_type).vec_dot_type)]
-    uint8_t* m_local_up_input_;           // [routed_expert_num * group_max_len * hidden_size * ggml_type_size(ggml_internal_get_type_traits(up_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(up_type).vec_dot_type)]
+    std::vector<uint8_t*> m_gate_input_;  // [group_max_len, hidden_size * ggml_type_size(ggml_get_type_traits_cpu(gate_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(gate_type)->vec_dot_type)]
+    std::vector<uint8_t*> m_up_input_;    // [group_max_len, hidden_size * ggml_type_size(ggml_get_type_traits_cpu(up_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(up_type)->vec_dot_type)]
+    uint8_t* m_local_gate_input_;         // [routed_expert_num * group_max_len * hidden_size * ggml_type_size(ggml_get_type_traits_cpu(gate_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(gate_type)->vec_dot_type)]
+    uint8_t* m_local_up_input_;           // [routed_expert_num * group_max_len * hidden_size * ggml_type_size(ggml_get_type_traits_cpu(up_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(up_type)->vec_dot_type)]
     float* m_local_gate_output_;          // [routed_expert_num * group_max_len * intermediate_size]
     float* m_local_up_output_;            // [routed_expert_num * group_max_len * intermediate_size]
     float* m_local_intermediate_fp32_;    // [routed_expert_num * group_max_len * intermediate_size]
-    uint8_t* m_local_down_input_;         // [routed_expert_num * group_max_len * intermediate_size * ggml_type_size(ggml_internal_get_type_traits(down_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(down_type).vec_dot_type)]
+    uint8_t* m_local_down_input_;         // [routed_expert_num * group_max_len * intermediate_size * ggml_type_size(ggml_get_type_traits_cpu(down_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(down_type)->vec_dot_type)]
     float* m_local_down_output_;          // [routed_expert_num * group_max_len * hidden_size]
     std::vector<float*> m_output_fp32_;   // [group_max_len, hidden_size]
 
@@ -158,7 +159,9 @@ class SFT_MOE {
     std::vector<int*> m_local_token_indices_ptr_;            // [expert_num]
     std::vector<int*> m_local_expert_positions_ptr_;         // [expert_num]
 
-	std::vector<SFT_MoEForwardCache> fw_cache_; // 持久缓存，便于backward读取到forward_cache
+	// Use pointer instead of direct member to reduce object size and avoid pybind11 issues
+	// with large nested vector structures
+	std::vector<SFT_MoEForwardCache>* fw_cache_; // 持久缓存，便于backward读取到forward_cache
 };
 
 #endif

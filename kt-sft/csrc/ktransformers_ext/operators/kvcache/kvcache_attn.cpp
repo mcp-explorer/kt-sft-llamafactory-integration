@@ -9,6 +9,20 @@
  **/
 
 #include "kvcache.h"
+#include "llama.cpp/ggml.h"
+#include "llama.cpp/ggml-impl.h"
+#include "llamafile/sgemm.h"
+
+// Forward declare if not defined
+#ifndef GGML_COMPUTE_PARAMS_DEFINED
+#include <cstdint>
+struct ggml_compute_params {
+    int64_t ith;
+    int64_t nth;
+    void* threadpool;
+};
+#define GGML_COMPUTE_PARAMS_DEFINED
+#endif
 
 #include <chrono>
 
@@ -789,7 +803,7 @@ void KVCache::quantize_q_(const uint16_t *q_in_data, int batch_size) {
                                       config_.head_dim +
                                   i * n_gqa_ * config_.head_dim + j]);
                 }
-                quantize_row_q8_0(q_fp32.data(), q_q8_0_[batch_idx][i].data(),
+                quantize_row_q8_0_ref(q_fp32.data(), q_q8_0_[batch_idx][i].data(),
                                   n_gqa_ * config_.head_dim);
             }
         }
@@ -914,7 +928,12 @@ void KVCache::calculate_block_similarity_layer_(
                     nth, nullptr,
                     [&](int task_id) {
                         int ith = task_id;
+                        ggml_compute_params params;
+        params.ith = ith;
+        params.nth = nth;
+        params.threadpool = nullptr;
                         bool ok = llamafile_sgemm(
+                            &params,
                             block_num, 1, config_.q_head_num * config_.head_dim,
                             anchor_.data() +
                                 (layer_idx * config_.max_block_num +
@@ -926,9 +945,7 @@ void KVCache::calculate_block_similarity_layer_(
                             avg_q_fp16[batch_id].data(),
                             config_.q_head_num * config_.head_dim,
                             block_similar_[batch_id].data() + init_block_num,
-                            block_num, ith, nth, GGML_TASK_TYPE_COMPUTE,
-                            GGML_TYPE_F16, GGML_TYPE_F16, GGML_TYPE_F32,
-                            GGML_PREC_DEFAULT);
+                            block_num, GGML_TYPE_F16, GGML_TYPE_F16, GGML_TYPE_F32);
                         if (!ok) {
                             printf("llamafile_sgemm failed\n");
                         }
@@ -941,7 +958,12 @@ void KVCache::calculate_block_similarity_layer_(
                         int block_id = task_id + init_block_num;
                         int block_idx =
                             block_table_before_retrieval_[batch_id][block_id];
+                        ggml_compute_params params;
+        params.ith = 0;
+        params.nth = 1;
+        params.threadpool = nullptr;
                         bool ok = llamafile_sgemm(
+                            &params,
                             1, 1, config_.q_head_num * config_.head_dim,
                             anchor_.data() +
                                 (layer_idx * config_.max_block_num +
@@ -952,9 +974,8 @@ void KVCache::calculate_block_similarity_layer_(
                             config_.q_head_num * config_.head_dim,
                             avg_q_fp16[batch_id].data(),
                             config_.q_head_num * config_.head_dim,
-                            block_similar_[batch_id].data() + block_id, 1, 0, 1,
-                            GGML_TASK_TYPE_COMPUTE, GGML_TYPE_F16,
-                            GGML_TYPE_F16, GGML_TYPE_F32, GGML_PREC_DEFAULT);
+                            block_similar_[batch_id].data() + block_id, 1,
+                            GGML_TYPE_F16, GGML_TYPE_F16, GGML_TYPE_F32);
                         if (!ok) {
                             printf("llamafile_sgemm failed\n");
                         }
@@ -2315,17 +2336,23 @@ void KVCache::attn_with_kvcache_one_block_(
                 }
             }
 
-            llamafile_sgemm(past_kv_len, bsz, head_dim,
+            ggml_compute_params params;
+        params.ith = 0;
+        params.nth = 1;
+        params.threadpool = nullptr;
+            llamafile_sgemm(&params, past_kv_len, bsz, head_dim,
                             (ggml_fp16_t *)k_cache_with_rope_fp16, head_dim,
                             (ggml_fp16_t *)q, head_dim, attn_score, past_kv_len,
-                            0, 1, GGML_TASK_TYPE_COMPUTE, k_type, GGML_TYPE_F16,
-                            GGML_TYPE_F32, GGML_PREC_DEFAULT);
+                            k_type, GGML_TYPE_F16, GGML_TYPE_F32);
         } else {
+            ggml_compute_params params;
+        params.ith = 0;
+        params.nth = 1;
+        params.threadpool = nullptr;
             bool ok = llamafile_sgemm(
-                past_kv_len, bsz, head_dim, (ggml_fp16_t *)k_cache, head_dim,
-                (ggml_fp16_t *)q, head_dim, attn_score, past_kv_len, 0, 1,
-                GGML_TASK_TYPE_COMPUTE, k_type, GGML_TYPE_F16, GGML_TYPE_F32,
-                GGML_PREC_DEFAULT);
+                &params, past_kv_len, bsz, head_dim, (ggml_fp16_t *)k_cache, head_dim,
+                (ggml_fp16_t *)q, head_dim, attn_score, past_kv_len,
+                k_type, GGML_TYPE_F16, GGML_TYPE_F32);
 
             if (!ok) {
                 printf("llamafile_sgemm failed\n");
@@ -2382,11 +2409,14 @@ void KVCache::attn_with_kvcache_one_block_(
 
         // TODO: anchor
         assert(num_v_anchor == 0);
+        ggml_compute_params params;
+        params.ith = 0;
+        params.nth = 1;
+        params.threadpool = nullptr;
         bool ok = llamafile_sgemm(
-            head_dim, bsz, past_kv_len, (ggml_fp16_t *)v_cache, past_kv_len,
-            (ggml_fp16_t *)attn_score_fp16, past_kv_len, sum, head_dim, 0, 1,
-            GGML_TASK_TYPE_COMPUTE, v_type, GGML_TYPE_F16, GGML_TYPE_F32,
-            GGML_PREC_DEFAULT);
+            &params, head_dim, bsz, past_kv_len, (ggml_fp16_t *)v_cache, past_kv_len,
+            (ggml_fp16_t *)attn_score_fp16, past_kv_len, sum, head_dim,
+            v_type, GGML_TYPE_F16, GGML_TYPE_F32);
         if (!ok) {
             printf("llamafile_sgemm failed\n");
         }
@@ -2463,23 +2493,29 @@ void KVCache::attn_with_kvcache_one_block_(
                         block_fp32[m] = GGML_FP16_TO_FP32(
                             k_cache_with_rope_fp16[k * head_dim + l * 32 + m]);
                     }
-                    quantize_row_q4_0(
+                    quantize_row_q4_0_ref(
                         block_fp32.data(),
                         &k_cache_with_rope_q4[k * head_dim / 32 + l], 32);
                 }
             }
 
-            llamafile_sgemm(past_kv_len, bsz, head_dim / 32,
+            ggml_compute_params params;
+        params.ith = 0;
+        params.nth = 1;
+        params.threadpool = nullptr;
+            llamafile_sgemm(&params, past_kv_len, bsz, head_dim / 32,
                             (block_q4_0 *)k_cache_with_rope_q4, head_dim / 32,
                             (block_q8_0 *)q, head_dim / 32, attn_score,
-                            past_kv_len, 0, 1, GGML_TASK_TYPE_COMPUTE, k_type,
-                            GGML_TYPE_Q8_0, GGML_TYPE_F32, GGML_PREC_DEFAULT);
+                            past_kv_len, k_type, GGML_TYPE_Q8_0, GGML_TYPE_F32);
         } else {
-            llamafile_sgemm(past_kv_len, bsz, head_dim / 32,
+            ggml_compute_params params2;
+        params2.ith = 0;
+        params2.nth = 1;
+        params2.threadpool = nullptr;
+            llamafile_sgemm(&params2, past_kv_len, bsz, head_dim / 32,
                             (block_q4_0 *)k_cache, head_dim / 32,
                             (block_q8_0 *)q, head_dim / 32, attn_score,
-                            past_kv_len, 0, 1, GGML_TASK_TYPE_COMPUTE, k_type,
-                            GGML_TYPE_Q8_0, GGML_TYPE_F32, GGML_PREC_DEFAULT);
+                            past_kv_len, k_type, GGML_TYPE_Q8_0, GGML_TYPE_F32);
         }
 
         // attn = attn * scale
@@ -2518,18 +2554,21 @@ void KVCache::attn_with_kvcache_one_block_(
         // output = attn * v + attn * v_anchor
         // std::vector<block_q8_0> attn_q8_0(bsz * past_kv_len / QK8_0);
         block_q8_0 *attn_q8_0 = reinterpret_cast<block_q8_0 *>(draft);
-        quantize_row_q8_0(attn_score, attn_q8_0, bsz * past_kv_len);
+        quantize_row_q8_0_ref(attn_score, attn_q8_0, bsz * past_kv_len);
         // std::vector<float> sum(bsz * head_dim);
         float *sum = reinterpret_cast<float *>(reinterpret_cast<char *>(draft) +
                                                sizeof(block_q8_0) * bsz *
                                                    past_kv_len / QK8_0);
         // TODO: anchor
         assert(num_v_anchor == 0);
-        llamafile_sgemm(head_dim, bsz, past_kv_len / 32, (block_q4_0 *)v_cache,
+        ggml_compute_params params;
+        params.ith = 0;
+        params.nth = 1;
+        params.threadpool = nullptr;
+        llamafile_sgemm(&params, head_dim, bsz, past_kv_len / 32, (block_q4_0 *)v_cache,
                         past_kv_len / 32, attn_q8_0, past_kv_len / 32, sum,
-                        head_dim, 0, 1, GGML_TASK_TYPE_COMPUTE, v_type,
-                        GGML_TYPE_Q8_0, GGML_TYPE_F32, GGML_PREC_DEFAULT);
+                        head_dim, v_type, GGML_TYPE_Q8_0, GGML_TYPE_F32);
 
-        quantize_row_q8_0(sum, (block_q8_0 *)output, bsz * head_dim);
+        quantize_row_q8_0_ref(sum, (block_q8_0 *)output, bsz * head_dim);
     }
 }

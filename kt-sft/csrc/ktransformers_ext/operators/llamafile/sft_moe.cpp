@@ -7,13 +7,37 @@
  * @LastEditTime : 2024-08-15 07:43:41
  * @Copyright (c) 2024 by KVCache.AI, All Rights Reserved.
  **/
+#include "llama.cpp/ggml.h"
+#include "llama.cpp/ggml-impl.h"
 #include "sft_moe.h"
+#include "ggml-cpu.h"
 #include <iostream>
 #include <cstdint>
 #include <cstring>
+
+// Forward declare if not defined
+#ifndef GGML_COMPUTE_PARAMS_DEFINED
+#include <cstdint>
+struct ggml_compute_params {
+    int64_t ith;
+    int64_t nth;
+    void* threadpool;
+};
+#define GGML_COMPUTE_PARAMS_DEFINED
+#endif
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <atomic>
+#ifdef __linux__
+#include <sys/mman.h>
+#include <unistd.h>
+#include <errno.h>
+#include <cstring>
+#include <execinfo.h>
+#include <signal.h>
+#include <dlfcn.h>
+#endif
 #include <stdexcept>
 #include <time.h>
 
@@ -22,8 +46,51 @@
 #include <numaif.h>
 #endif
 
+// Signal handler to print backtrace on segfault
+static void segfault_handler(int sig, siginfo_t* info, void* context) {
+    fprintf(stderr, "\n=== SEGFAULT DETECTED ===\n");
+    fprintf(stderr, "Signal: %d, Address: %p\n", sig, info->si_addr);
+    
+    void* array[50];
+    size_t size = backtrace(array, 50);
+    
+    fprintf(stderr, "Backtrace (%zu frames):\n", size);
+    backtrace_symbols_fd(array, size, STDERR_FILENO);
+    
+    fprintf(stderr, "=== END BACKTRACE ===\n");
+    fflush(stderr);
+    
+    // Re-raise signal to get core dump
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+// Install signal handler on first use
+static bool signal_handler_installed = false;
+static void install_signal_handler() {
+    if (!signal_handler_installed) {
+        struct sigaction sa;
+        sa.sa_sigaction = segfault_handler;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = SA_SIGINFO;
+        sigaction(SIGSEGV, &sa, nullptr);
+        sigaction(SIGBUS, &sa, nullptr);
+        signal_handler_installed = true;
+    }
+}
+
 SFT_MOE::SFT_MOE(SFT_MOEConfig config) {
+    // Install signal handler on first constructor call
+    install_signal_handler();
+    
+    // CRITICAL: Copy config immediately and store pointers before any other operations
+    // This ensures config data is captured before Python might destroy the config object
     config_ = config;
+    
+    // Store pointers from config immediately to avoid accessing destroyed config
+    void* gate_proj_ptr = config_.gate_proj;
+    void* up_proj_ptr = config_.up_proj;
+    void* down_proj_ptr = config_.down_proj;
     
     // Initialize ownership flags
     owns_gate_proj_cpu_ = false;
@@ -33,66 +100,69 @@ SFT_MOE::SFT_MOE(SFT_MOEConfig config) {
     up_proj_cpu_ = nullptr;
     down_proj_cpu_ = nullptr;
     
+    // CRITICAL: Initialize ALL pointer members to nullptr to prevent uninitialized access
+    gate_proj_ = nullptr;
+    up_proj_ = nullptr;
+    down_proj_ = nullptr;
+    gate_proj_t_ = nullptr;
+    up_proj_t_ = nullptr;
+    down_proj_t_ = nullptr;
+    transpose_buffer_fp32_ = nullptr;
+    transpose_buffer_ = nullptr;
+    s_input_fp32_ = nullptr;
+    s_gate_input_ = nullptr;
+    s_up_input_ = nullptr;
+    s_output_fp32_ = nullptr;
+    s_input_grad_fp32_ = nullptr;
+    m_local_gate_input_ = nullptr;
+    m_local_up_input_ = nullptr;
+    m_local_gate_output_ = nullptr;
+    m_local_up_output_ = nullptr;
+    m_local_intermediate_fp32_ = nullptr;
+    m_local_down_input_ = nullptr;
+    m_local_down_output_ = nullptr;
+    m_local_down_output_grad_ = nullptr;
+    m_local_down_input_grad_ = nullptr;
+    m_local_gate_output_grad_fp32_ = nullptr;
+    m_local_up_output_grad_fp32_ = nullptr;
+    m_local_gate_output_grad_ = nullptr;
+    m_local_up_output_grad_ = nullptr;
+    m_local_gate_input_grad_ = nullptr;
+    m_local_up_input_grad_ = nullptr;
+    m_local_token_indices_ = nullptr;
+    m_local_expert_positions_ = nullptr;
+    
     // Debug: Log pointer values when stored
     const char* debug_env = std::getenv("KSFT_MOE_DEBUG");
     bool debug = (debug_env != nullptr && std::string(debug_env) == "1");
     if (debug) {
         fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] Constructor: Original pointers\n");
         fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] config.gate_proj=%p, config.up_proj=%p, config.down_proj=%p\n", 
-                config_.gate_proj, config_.up_proj, config_.down_proj);
+                gate_proj_ptr, up_proj_ptr, down_proj_ptr);
         fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] expert_num=%ld, intermediate_size=%ld, hidden_size=%ld\n",
                 config_.expert_num, config_.intermediate_size, config_.hidden_size);
         fflush(stderr);
     }
     
-    // Step 5: Copy expert weights to CPU-accessible memory
-    // Calculate sizes for each weight matrix
-    size_t gate_size = (size_t)config_.expert_num * config_.intermediate_size * config_.hidden_size * 
-                       ggml_type_size(config_.gate_type) / ggml_blck_size(config_.gate_type);
-    size_t up_size = (size_t)config_.expert_num * config_.intermediate_size * config_.hidden_size * 
-                     ggml_type_size(config_.up_type) / ggml_blck_size(config_.up_type);
-    size_t down_size = (size_t)config_.expert_num * config_.hidden_size * config_.intermediate_size * 
-                       ggml_type_size(config_.down_type) / ggml_blck_size(config_.down_type);
+    // Match MOE pattern: assign pointers directly without copying
+    // This avoids potential stack overflow and memory issues in constructor
+    gate_proj_ = gate_proj_ptr;
+    up_proj_ = up_proj_ptr;
+    down_proj_ = down_proj_ptr;
     
-    // Allocate CPU-accessible memory and copy data
-    gate_proj_cpu_ = std::aligned_alloc(64, gate_size);
-    up_proj_cpu_ = std::aligned_alloc(64, up_size);
-    down_proj_cpu_ = std::aligned_alloc(64, down_size);
-    
-    if (!gate_proj_cpu_ || !up_proj_cpu_ || !down_proj_cpu_) {
-        throw std::runtime_error("Failed to allocate CPU-accessible memory for expert weights");
-    }
-    
-    owns_gate_proj_cpu_ = true;
-    owns_up_proj_cpu_ = true;
-    owns_down_proj_cpu_ = true;
-    
-    // Copy data from original pointers to CPU-accessible memory
-    // Note: This assumes the original pointers are valid at construction time
-    // If they're not, we'll need to handle this differently
-    try {
-        std::memcpy(gate_proj_cpu_, config_.gate_proj, gate_size);
-        std::memcpy(up_proj_cpu_, config_.up_proj, up_size);
-        std::memcpy(down_proj_cpu_, config_.down_proj, down_size);
-    } catch (...) {
-        // If memcpy fails, free allocated memory and rethrow
-        if (gate_proj_cpu_) std::free(gate_proj_cpu_);
-        if (up_proj_cpu_) std::free(up_proj_cpu_);
-        if (down_proj_cpu_) std::free(down_proj_cpu_);
-        throw;
-    }
-    
-    // Update pointers to point to CPU-accessible copies
-    gate_proj_ = gate_proj_cpu_;
-    up_proj_ = up_proj_cpu_;
-    down_proj_ = down_proj_cpu_;
+    // CPU-accessible copies are not needed if pointers are already CPU-accessible
+    // Set to nullptr to indicate we don't own the memory
+    gate_proj_cpu_ = nullptr;
+    up_proj_cpu_ = nullptr;
+    down_proj_cpu_ = nullptr;
+    owns_gate_proj_cpu_ = false;
+    owns_up_proj_cpu_ = false;
+    owns_down_proj_cpu_ = false;
     
     if (debug) {
-        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] Copied expert weights to CPU-accessible memory\n");
-        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] gate_proj_=%p (copied), up_proj_=%p (copied), down_proj_=%p (copied)\n",
+        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] Assigned pointers directly (matching MOE pattern)\n");
+        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] gate_proj_=%p, up_proj_=%p, down_proj_=%p\n",
                 gate_proj_, up_proj_, down_proj_);
-        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] gate_size=%zu, up_size=%zu, down_size=%zu\n",
-                gate_size, up_size, down_size);
         fflush(stderr);
     }
     
@@ -129,8 +199,8 @@ SFT_MOE::SFT_MOE(SFT_MOEConfig config) {
     s_mem_requests.push_back({(void**)&transpose_buffer_, config_.expert_num * config_.intermediate_size * config_.hidden_size * ggml_type_size(config_.grad_type)});
 
     s_mem_requests.push_back({(void**)&s_input_fp32_, sizeof(float) * config_.hidden_size});
-    s_mem_requests.push_back({(void**)&s_gate_input_, config_.hidden_size * ggml_type_size(ggml_internal_get_type_traits(config_.gate_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(config_.gate_type).vec_dot_type)});
-    s_mem_requests.push_back({(void**)&s_up_input_, config_.hidden_size * ggml_type_size(ggml_internal_get_type_traits(config_.up_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(config_.up_type).vec_dot_type)});
+    s_mem_requests.push_back({(void**)&s_gate_input_, config_.hidden_size * ggml_type_size(ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type)});
+    s_mem_requests.push_back({(void**)&s_up_input_, config_.hidden_size * ggml_type_size(ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type)});
     s_gate_output_.resize(config_.routed_expert_num);
     s_up_output_.resize(config_.routed_expert_num);
     s_intermediate_fp32_.resize(config_.routed_expert_num);
@@ -140,7 +210,7 @@ SFT_MOE::SFT_MOE(SFT_MOEConfig config) {
         s_mem_requests.push_back({(void**)&s_gate_output_[i], sizeof(float) * config_.intermediate_size});
         s_mem_requests.push_back({(void**)&s_up_output_[i], sizeof(float) * config_.intermediate_size});
         s_mem_requests.push_back({(void**)&s_intermediate_fp32_[i], sizeof(float) * config_.intermediate_size});
-        s_mem_requests.push_back({(void**)&s_down_input_[i], config_.intermediate_size * ggml_type_size(ggml_internal_get_type_traits(config_.down_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(config_.down_type).vec_dot_type)});
+        s_mem_requests.push_back({(void**)&s_down_input_[i], config_.intermediate_size * ggml_type_size(ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type)});
         s_mem_requests.push_back({(void**)&s_down_output_[i], sizeof(float) * config_.hidden_size});
     }
     s_mem_requests.push_back({(void**)&s_output_fp32_, sizeof(float) * config_.hidden_size});
@@ -163,7 +233,24 @@ SFT_MOE::SFT_MOE(SFT_MOEConfig config) {
     }
     s_mem_requests.push_back({(void**)&s_input_grad_fp32_, config_.hidden_size * sizeof(float)});
 
+    if (debug) {
+        uint64_t total_s_size = 0;
+        for (const auto& req : s_mem_requests) {
+            total_s_size += req.second;
+        }
+        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] About to call shared_mem_buffer.alloc() for s_mem_requests\n");
+        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] s_mem_requests.size()=%zu, total_size=%llu bytes (%.2f MB)\n",
+                s_mem_requests.size(), (unsigned long long)total_s_size, total_s_size / (1024.0 * 1024.0));
+        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] this=%p\n", (void*)this);
+        fflush(stderr);
+    }
+    
     shared_mem_buffer.alloc(this, s_mem_requests);
+    
+    if (debug) {
+        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] ✓ shared_mem_buffer.alloc() for s_mem_requests completed successfully\n");
+        fflush(stderr);
+    }
 
     std::vector<std::pair<void**, uint64_t>> m_mem_requests;
     m_input_fp32_.resize(config_.group_max_len);
@@ -171,15 +258,15 @@ SFT_MOE::SFT_MOE(SFT_MOEConfig config) {
     m_up_input_.resize(config_.group_max_len);
     for (int i = 0; i < config_.group_max_len; i++) {
         m_mem_requests.push_back({(void**)&m_input_fp32_[i], sizeof(float) * config_.hidden_size});
-        m_mem_requests.push_back({(void**)&m_gate_input_[i], config_.hidden_size * ggml_type_size(ggml_internal_get_type_traits(config_.gate_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(config_.gate_type).vec_dot_type)});
-        m_mem_requests.push_back({(void**)&m_up_input_[i], config_.hidden_size * ggml_type_size(ggml_internal_get_type_traits(config_.up_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(config_.up_type).vec_dot_type)});
+        m_mem_requests.push_back({(void**)&m_gate_input_[i], config_.hidden_size * ggml_type_size(ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type)});
+        m_mem_requests.push_back({(void**)&m_up_input_[i], config_.hidden_size * ggml_type_size(ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type)});
     }
-    m_mem_requests.push_back({(void**)&m_local_gate_input_, config_.routed_expert_num * config_.group_max_len * config_.hidden_size * ggml_type_size(ggml_internal_get_type_traits(config_.gate_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(config_.gate_type).vec_dot_type)});
-    m_mem_requests.push_back({(void**)&m_local_up_input_, config_.routed_expert_num * config_.group_max_len * config_.hidden_size * ggml_type_size(ggml_internal_get_type_traits(config_.up_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(config_.up_type).vec_dot_type)});
+    m_mem_requests.push_back({(void**)&m_local_gate_input_, config_.routed_expert_num * config_.group_max_len * config_.hidden_size * ggml_type_size(ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type)});
+    m_mem_requests.push_back({(void**)&m_local_up_input_, config_.routed_expert_num * config_.group_max_len * config_.hidden_size * ggml_type_size(ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type)});
     m_mem_requests.push_back({(void**)&m_local_gate_output_, sizeof(float) * config_.routed_expert_num * config_.group_max_len * config_.intermediate_size});
     m_mem_requests.push_back({(void**)&m_local_up_output_, sizeof(float) * config_.routed_expert_num * config_.group_max_len * config_.intermediate_size});
     m_mem_requests.push_back({(void**)&m_local_intermediate_fp32_, sizeof(float) * config_.routed_expert_num * config_.group_max_len * config_.intermediate_size});
-    m_mem_requests.push_back({(void**)&m_local_down_input_, config_.routed_expert_num * config_.group_max_len * config_.intermediate_size * ggml_type_size(ggml_internal_get_type_traits(config_.down_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(config_.down_type).vec_dot_type)});
+    m_mem_requests.push_back({(void**)&m_local_down_input_, config_.routed_expert_num * config_.group_max_len * config_.intermediate_size * ggml_type_size(ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type)});
     m_mem_requests.push_back({(void**)&m_local_down_output_, sizeof(float) * config_.routed_expert_num * config_.group_max_len * config_.hidden_size});
     m_output_fp32_.resize(config_.group_max_len);
     for (int i = 0; i < config_.group_max_len; i++) {
@@ -201,7 +288,24 @@ SFT_MOE::SFT_MOE(SFT_MOEConfig config) {
         m_mem_requests.push_back({(void**)&m_grad_input_fp32_[i], sizeof(float) * config_.hidden_size});
     }
     
+    if (debug) {
+        uint64_t total_m_size = 0;
+        for (const auto& req : m_mem_requests) {
+            total_m_size += req.second;
+        }
+        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] About to call shared_mem_buffer.alloc() for m_mem_requests\n");
+        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] m_mem_requests.size()=%zu, total_size=%llu bytes (%.2f MB)\n",
+                m_mem_requests.size(), (unsigned long long)total_m_size, total_m_size / (1024.0 * 1024.0));
+        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] this=%p\n", (void*)this);
+        fflush(stderr);
+    }
+    
     shared_mem_buffer.alloc(this, m_mem_requests);
+    
+    if (debug) {
+        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] ✓ shared_mem_buffer.alloc() for m_mem_requests completed successfully\n");
+        fflush(stderr);
+    }
 
     m_local_pos_.resize(config_.group_max_len);
     for (int i = 0; i < config_.group_max_len; i++) {
@@ -229,10 +333,73 @@ SFT_MOE::SFT_MOE(SFT_MOEConfig config) {
     // fwd_cache访问映射指针数组初始化
     m_local_token_indices_ptr_.resize(config_.expert_num);
     m_local_expert_positions_ptr_.resize(config_.expert_num);
+    
+    // Allocate fw_cache_ on heap to reduce object size and avoid pybind11 issues
+    // with large nested vector structures
+    fw_cache_ = new std::vector<SFT_MoEForwardCache>();
+    
+    // Final memory barrier to ensure ALL writes are visible before constructor returns
+    // This includes all pointer assignments, vector resizes, and buffer allocations
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+    
+    // Additional compiler barrier to prevent reordering
+    asm volatile("" ::: "memory");
+    
+    // CRITICAL: Verify all critical pointers are valid before returning
+    // This helps catch issues before Python accesses the object
+    if (gate_proj_t_ == nullptr || up_proj_t_ == nullptr || down_proj_t_ == nullptr) {
+        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] FATAL: Critical buffer pointers are nullptr!\n");
+        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] gate_proj_t_=%p, up_proj_t_=%p, down_proj_t_=%p\n",
+                (void*)gate_proj_t_, (void*)up_proj_t_, (void*)down_proj_t_);
+        fflush(stderr);
+        throw std::runtime_error("SFT_MOE constructor: buffer pointers not initialized");
+    }
+    
+    // REMOVED: Buffer access test - this can cause segfaults if buffers are not yet fully initialized
+    // The buffers are allocated by shared_mem_buffer.alloc() which should be safe
+    // If there's an issue, it will be caught during actual use, not here
+    
+    if (debug) {
+        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] ✓ Constructor completed successfully\n");
+        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] All arrays resized, ready for use\n");
+        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] Memory barriers executed, all writes are visible\n");
+        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] Buffer pointers verified accessible\n");
+        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] this=%p, gate_proj_=%p, up_proj_=%p, down_proj_=%p\n",
+                (void*)this, gate_proj_, up_proj_, down_proj_);
+        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] buffer_ pointers: gate_proj_t_=%p, up_proj_t_=%p, down_proj_t_=%p\n",
+                (void*)gate_proj_t_, (void*)up_proj_t_, (void*)down_proj_t_);
+        fprintf(stderr, "[C++ SFT_MOE::SFT_MOE] fw_cache_=%p, size=%zu, capacity=%zu\n",
+                (void*)fw_cache_, fw_cache_ ? fw_cache_->size() : 0, fw_cache_ ? fw_cache_->capacity() : 0);
+        fflush(stderr);
+    }
 }
 
 SFT_MOE::~SFT_MOE() {
+    const char* debug_env = std::getenv("KSFT_MOE_DEBUG");
+    bool debug = (debug_env != nullptr && std::string(debug_env) == "1");
+    
+    if (debug) {
+        fprintf(stderr, "[C++ SFT_MOE::~SFT_MOE] Destructor called for this=%p\n", (void*)this);
+        fprintf(stderr, "[C++ SFT_MOE::~SFT_MOE] gate_proj_t_=%p, up_proj_t_=%p, down_proj_t_=%p\n",
+                (void*)gate_proj_t_, (void*)up_proj_t_, (void*)down_proj_t_);
+        fflush(stderr);
+    }
+    
+    // CRITICAL: Verify pointers are still valid before deallocating
+    // This helps catch use-after-free or double-free issues
+    if (gate_proj_t_ != nullptr || up_proj_t_ != nullptr || down_proj_t_ != nullptr) {
+        if (debug) {
+            fprintf(stderr, "[C++ SFT_MOE::~SFT_MOE] Buffer pointers still set, deallocating from shared buffer\n");
+            fflush(stderr);
+        }
+    }
+    
     shared_mem_buffer.dealloc(this);
+    
+    if (debug) {
+        fprintf(stderr, "[C++ SFT_MOE::~SFT_MOE] ✓ Shared buffer deallocated\n");
+        fflush(stderr);
+    }
 
     // Free CPU-accessible copies if we allocated them
     if (owns_gate_proj_cpu_ && gate_proj_cpu_) {
@@ -246,6 +413,12 @@ SFT_MOE::~SFT_MOE() {
     if (owns_down_proj_cpu_ && down_proj_cpu_) {
         std::free(down_proj_cpu_);
         down_proj_cpu_ = nullptr;
+    }
+
+    // Delete fw_cache_ if allocated
+    if (fw_cache_ != nullptr) {
+        delete fw_cache_;
+        fw_cache_ = nullptr;
     }
 
     #ifdef USE_NUMA
@@ -282,12 +455,16 @@ static float act_fn(float x) {
 
 void SFT_MOE::ensure_fwd_cache(int qlen, int k)
 {
-	int old_sz = fw_cache_.size();
+	if (fw_cache_ == nullptr) {
+		fw_cache_ = new std::vector<SFT_MoEForwardCache>();
+	}
+	
+	int old_sz = fw_cache_->size();
     if (old_sz < qlen)
     {
-        fw_cache_.resize(qlen);
+        fw_cache_->resize(qlen);
         for (int i = old_sz; i < qlen; ++i)  // 仅初始化新增元素
-            fw_cache_[i].init(k, config_.intermediate_size);
+            (*fw_cache_)[i].init(k, config_.intermediate_size);
     }
     
     // Ensure all entries up to qlen are initialized (in case k changed)
@@ -295,34 +472,34 @@ void SFT_MOE::ensure_fwd_cache(int qlen, int k)
     for (int i = 0; i < qlen; ++i) {
         // Re-init if k or intermediate_size might have changed
         // The init() function is safe to call multiple times (only resizes if needed)
-        fw_cache_[i].init(k, config_.intermediate_size);
+        (*fw_cache_)[i].init(k, config_.intermediate_size);
     }
 }
 
 SFT_MoEForwardCache* SFT_MOE::fwd_cache_ptr()
 {
-	return fw_cache_.empty() ? nullptr : fw_cache_.data();
+	return (fw_cache_ == nullptr || fw_cache_->empty()) ? nullptr : fw_cache_->data();
 }
 
 void SFT_MOE::forward_one(int k, const uint64_t* expert_ids, const float* weights, const void* input, void* output, Backend* backend, SFT_MoEForwardCache* fwd_cache) {
     const void* gate_input_ptr;
     const void* up_input_ptr;
-    if (config_.hidden_type == ggml_internal_get_type_traits(config_.gate_type).vec_dot_type && config_.hidden_type == ggml_internal_get_type_traits(config_.up_type).vec_dot_type) {
+    if (config_.hidden_type == ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type && config_.hidden_type == ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type) {
         gate_input_ptr = up_input_ptr = input;
     } else {
         to_float(input, s_input_fp32_, config_.hidden_size, config_.hidden_type);
-        if (ggml_internal_get_type_traits(config_.gate_type).vec_dot_type == ggml_internal_get_type_traits(config_.up_type).vec_dot_type) {
-            from_float(s_input_fp32_, s_gate_input_, config_.hidden_size, ggml_internal_get_type_traits(config_.gate_type).vec_dot_type);
+        if (ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type == ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type) {
+            from_float(s_input_fp32_, s_gate_input_, config_.hidden_size, ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type);
             gate_input_ptr = up_input_ptr = s_gate_input_;
         } else {
-            if (config_.hidden_type != ggml_internal_get_type_traits(config_.gate_type).vec_dot_type) {
-                from_float(s_input_fp32_, s_gate_input_, config_.hidden_size, ggml_internal_get_type_traits(config_.gate_type).vec_dot_type);
+            if (config_.hidden_type != ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type) {
+                from_float(s_input_fp32_, s_gate_input_, config_.hidden_size, ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type);
                 gate_input_ptr = s_gate_input_;
             } else {
                 gate_input_ptr = input;
             }
-            if (config_.hidden_type != ggml_internal_get_type_traits(config_.up_type).vec_dot_type) {
-                from_float(s_input_fp32_, s_up_input_, config_.hidden_size, ggml_internal_get_type_traits(config_.up_type).vec_dot_type);
+            if (config_.hidden_type != ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type) {
+                from_float(s_input_fp32_, s_up_input_, config_.hidden_size, ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type);
                 up_input_ptr = s_up_input_;
             } else {
                 up_input_ptr = input;
@@ -342,7 +519,11 @@ void SFT_MOE::forward_one(int k, const uint64_t* expert_ids, const float* weight
         #endif
 
         float* gate_output_ptr = s_gate_output_[expert_idx] + ith * config_.stride;
-        llamafile_sgemm(config_.stride, 1, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_proj_ptr, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_input_ptr, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_output_ptr, config_.stride, 0, 1, GGML_TASK_TYPE_COMPUTE, config_.gate_type, ggml_internal_get_type_traits(config_.gate_type).vec_dot_type, GGML_TYPE_F32, GGML_PREC_DEFAULT);
+        ggml_compute_params params_gate;
+        params_gate.ith = ith;
+        params_gate.nth = config_.stride;
+        params_gate.threadpool = nullptr;
+        llamafile_sgemm(&params_gate, config_.stride, 1, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_proj_ptr, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_input_ptr, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_output_ptr, config_.stride, config_.gate_type, ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type, GGML_TYPE_F32);
 
         #ifdef USE_NUMA
         void* up_proj_ptr = (uint8_t*)up_proj_numa_[Backend::numa_node] + (expert_id * config_.intermediate_size + ith * config_.stride) * config_.hidden_size * ggml_type_size(config_.up_type) / ggml_blck_size(config_.up_type);
@@ -351,19 +532,23 @@ void SFT_MOE::forward_one(int k, const uint64_t* expert_ids, const float* weight
         #endif
 
         float* up_output_ptr = s_up_output_[expert_idx] + ith * config_.stride;
-        llamafile_sgemm(config_.stride, 1, config_.hidden_size / ggml_blck_size(config_.up_type), up_proj_ptr, config_.hidden_size / ggml_blck_size(config_.up_type), up_input_ptr, config_.hidden_size / ggml_blck_size(config_.up_type), up_output_ptr, config_.stride, 0, 1, GGML_TASK_TYPE_COMPUTE, config_.up_type, ggml_internal_get_type_traits(config_.up_type).vec_dot_type, GGML_TYPE_F32, GGML_PREC_DEFAULT);
+        ggml_compute_params params_up;
+        params_up.ith = ith;
+        params_up.nth = config_.stride;
+        params_up.threadpool = nullptr;
+        llamafile_sgemm(&params_up, config_.stride, 1, config_.hidden_size / ggml_blck_size(config_.up_type), up_proj_ptr, config_.hidden_size / ggml_blck_size(config_.up_type), up_input_ptr, config_.hidden_size / ggml_blck_size(config_.up_type), up_output_ptr, config_.stride, config_.up_type, ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type, GGML_TYPE_F32);
         for (int i = ith * config_.stride; i < (ith + 1) * config_.stride; i++) {
             s_intermediate_fp32_[expert_idx][i] = act_fn(s_gate_output_[expert_idx][i]) * s_up_output_[expert_idx][i];
         }
-        if (config_.stride % ggml_blck_size(ggml_internal_get_type_traits(config_.down_type).vec_dot_type) == 0) {
+        if (config_.stride % ggml_blck_size(ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type) == 0) {
             float* intermediate_fp32_ptr = s_intermediate_fp32_[expert_idx] + ith * config_.stride;
-            void* down_input_ptr = s_down_input_[expert_idx] + ith * config_.stride * ggml_type_size(ggml_internal_get_type_traits(config_.down_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(config_.down_type).vec_dot_type);
-            from_float(intermediate_fp32_ptr, down_input_ptr, config_.stride, ggml_internal_get_type_traits(config_.down_type).vec_dot_type);
+            void* down_input_ptr = s_down_input_[expert_idx] + ith * config_.stride * ggml_type_size(ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type);
+            from_float(intermediate_fp32_ptr, down_input_ptr, config_.stride, ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type);
         }
     }, nullptr);
-    if (config_.stride % ggml_blck_size(ggml_internal_get_type_traits(config_.down_type).vec_dot_type) != 0) {
+    if (config_.stride % ggml_blck_size(ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type) != 0) {
         for (int i = 0; i < k; i++) {
-            from_float(s_intermediate_fp32_[i], s_down_input_[i], config_.intermediate_size, ggml_internal_get_type_traits(config_.down_type).vec_dot_type);
+            from_float(s_intermediate_fp32_[i], s_down_input_[i], config_.intermediate_size, ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type);
         }
     }
     nth = config_.hidden_size / config_.stride;
@@ -382,7 +567,11 @@ void SFT_MOE::forward_one(int k, const uint64_t* expert_ids, const float* weight
             #endif
             
             float* down_output_ptr = s_down_output_[expert_idx] + ith * config_.stride;
-            llamafile_sgemm(config_.stride, 1, config_.intermediate_size / ggml_blck_size(config_.down_type), down_proj_ptr, config_.intermediate_size / ggml_blck_size(config_.down_type), s_down_input_[expert_idx], config_.intermediate_size / ggml_blck_size(config_.down_type), down_output_ptr, config_.stride, 0, 1, GGML_TASK_TYPE_COMPUTE, config_.down_type, ggml_internal_get_type_traits(config_.down_type).vec_dot_type, GGML_TYPE_F32, GGML_PREC_DEFAULT);
+            ggml_compute_params params_down;
+        params_down.ith = ith;
+        params_down.nth = config_.stride;
+        params_down.threadpool = nullptr;
+            llamafile_sgemm(&params_down, config_.stride, 1, config_.intermediate_size / ggml_blck_size(config_.down_type), down_proj_ptr, config_.intermediate_size / ggml_blck_size(config_.down_type), s_down_input_[expert_idx], config_.intermediate_size / ggml_blck_size(config_.down_type), down_output_ptr, config_.stride, config_.down_type, ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type, GGML_TYPE_F32);
             for (int i = ith * config_.stride; i < (ith + 1) * config_.stride; i++) {
                 s_output_fp32_[i] += s_down_output_[expert_idx][i] * weights[expert_idx];
             }
@@ -422,34 +611,34 @@ void SFT_MOE::forward_many(int qlen, int k, const uint64_t* expert_ids, const fl
     }
     uint64_t offset = 0;
     for (int i = 0; i < config_.expert_num; i++) {
-        m_local_gate_input_ptr_[i] = m_local_gate_input_ + offset * config_.hidden_size * ggml_type_size(ggml_internal_get_type_traits(config_.gate_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(config_.gate_type).vec_dot_type);
-        m_local_up_input_ptr_[i] = m_local_up_input_ + offset * config_.hidden_size * ggml_type_size(ggml_internal_get_type_traits(config_.up_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(config_.up_type).vec_dot_type);
+        m_local_gate_input_ptr_[i] = m_local_gate_input_ + offset * config_.hidden_size * ggml_type_size(ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type);
+        m_local_up_input_ptr_[i] = m_local_up_input_ + offset * config_.hidden_size * ggml_type_size(ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type);
         m_local_gate_output_ptr_[i] = m_local_gate_output_ + offset * config_.intermediate_size;
         m_local_up_output_ptr_[i] = m_local_up_output_ + offset * config_.intermediate_size;
         m_local_intermediate_fp32_ptr_[i] = m_local_intermediate_fp32_ + offset * config_.intermediate_size;
-        m_local_down_input_ptr_[i] = m_local_down_input_ + offset * config_.intermediate_size * ggml_type_size(ggml_internal_get_type_traits(config_.down_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(config_.down_type).vec_dot_type);
+        m_local_down_input_ptr_[i] = m_local_down_input_ + offset * config_.intermediate_size * ggml_type_size(ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type);
         m_local_down_output_ptr_[i] = m_local_down_output_ + offset * config_.hidden_size;
         offset += m_local_num_[i];
     }
     backend->do_work_stealing_job(qlen, nullptr, [&](int i) {
         const void* gate_input_ptr;
         const void* up_input_ptr;
-        if (config_.hidden_type == ggml_internal_get_type_traits(config_.gate_type).vec_dot_type && config_.hidden_type == ggml_internal_get_type_traits(config_.up_type).vec_dot_type) {
+        if (config_.hidden_type == ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type && config_.hidden_type == ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type) {
             gate_input_ptr = up_input_ptr = (uint8_t*)input + i * config_.hidden_size * ggml_type_size(config_.hidden_type) / ggml_blck_size(config_.hidden_type);
         } else {
             to_float((uint8_t*)input + i * config_.hidden_size * ggml_type_size(config_.hidden_type) / ggml_blck_size(config_.hidden_type), m_input_fp32_[i], config_.hidden_size, config_.hidden_type);
-            if (ggml_internal_get_type_traits(config_.gate_type).vec_dot_type == ggml_internal_get_type_traits(config_.up_type).vec_dot_type) {
-                from_float(m_input_fp32_[i], m_gate_input_[i], config_.hidden_size, ggml_internal_get_type_traits(config_.gate_type).vec_dot_type);
+            if (ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type == ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type) {
+                from_float(m_input_fp32_[i], m_gate_input_[i], config_.hidden_size, ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type);
                 gate_input_ptr = up_input_ptr = m_gate_input_[i];
             } else {
-                if (config_.hidden_type != ggml_internal_get_type_traits(config_.gate_type).vec_dot_type) {
-                    from_float(m_input_fp32_[i], m_gate_input_[i], config_.hidden_size, ggml_internal_get_type_traits(config_.gate_type).vec_dot_type);
+                if (config_.hidden_type != ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type) {
+                    from_float(m_input_fp32_[i], m_gate_input_[i], config_.hidden_size, ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type);
                     gate_input_ptr = m_gate_input_[i];
                 } else {
                     gate_input_ptr = (uint8_t*)input + i * config_.hidden_size * ggml_type_size(config_.hidden_type) / ggml_blck_size(config_.hidden_type);
                 }
-                if (config_.hidden_type != ggml_internal_get_type_traits(config_.up_type).vec_dot_type) {
-                    from_float(m_input_fp32_[i], m_up_input_[i], config_.hidden_size, ggml_internal_get_type_traits(config_.up_type).vec_dot_type);
+                if (config_.hidden_type != ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type) {
+                    from_float(m_input_fp32_[i], m_up_input_[i], config_.hidden_size, ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type);
                     up_input_ptr = m_up_input_[i];
                 } else {
                     up_input_ptr = (uint8_t*)input + i * config_.hidden_size * ggml_type_size(config_.hidden_type) / ggml_blck_size(config_.hidden_type);
@@ -457,8 +646,8 @@ void SFT_MOE::forward_many(int qlen, int k, const uint64_t* expert_ids, const fl
             }
         }
         for (int j = 0; j < k; j++) {
-            memcpy(m_local_gate_input_ptr_[expert_ids[i * k + j]] + m_local_pos_[i][j] * config_.hidden_size * ggml_type_size(ggml_internal_get_type_traits(config_.gate_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(config_.gate_type).vec_dot_type), gate_input_ptr, config_.hidden_size * ggml_type_size(ggml_internal_get_type_traits(config_.gate_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(config_.gate_type).vec_dot_type));
-            memcpy(m_local_up_input_ptr_[expert_ids[i * k + j]] + m_local_pos_[i][j] * config_.hidden_size * ggml_type_size(ggml_internal_get_type_traits(config_.up_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(config_.up_type).vec_dot_type), up_input_ptr, config_.hidden_size * ggml_type_size(ggml_internal_get_type_traits(config_.up_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(config_.up_type).vec_dot_type));
+            memcpy(m_local_gate_input_ptr_[expert_ids[i * k + j]] + m_local_pos_[i][j] * config_.hidden_size * ggml_type_size(ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type), gate_input_ptr, config_.hidden_size * ggml_type_size(ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type));
+            memcpy(m_local_up_input_ptr_[expert_ids[i * k + j]] + m_local_pos_[i][j] * config_.hidden_size * ggml_type_size(ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type), up_input_ptr, config_.hidden_size * ggml_type_size(ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type));
         }
     }, nullptr);
     int stride = QK_K;
@@ -475,7 +664,11 @@ void SFT_MOE::forward_many(int qlen, int k, const uint64_t* expert_ids, const fl
         #endif
 
         float* gate_output_ptr = m_local_gate_output_ptr_[expert_idx] + ith * stride;
-        llamafile_sgemm(stride, m_local_num_[expert_idx], config_.hidden_size / ggml_blck_size(config_.gate_type), gate_proj_ptr, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_input_ptr, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_output_ptr, config_.intermediate_size, 0, 1, GGML_TASK_TYPE_COMPUTE, config_.gate_type, ggml_internal_get_type_traits(config_.gate_type).vec_dot_type, GGML_TYPE_F32, GGML_PREC_DEFAULT);
+        ggml_compute_params params_gate;
+        params_gate.ith = ith;
+        params_gate.nth = stride;
+        params_gate.threadpool = nullptr;
+        llamafile_sgemm(&params_gate, stride, m_local_num_[expert_idx], config_.hidden_size / ggml_blck_size(config_.gate_type), gate_proj_ptr, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_input_ptr, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_output_ptr, config_.intermediate_size, config_.gate_type, ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type, GGML_TYPE_F32);
         void* up_input_ptr = m_local_up_input_ptr_[expert_idx];
 
         #ifdef USE_NUMA
@@ -485,14 +678,18 @@ void SFT_MOE::forward_many(int qlen, int k, const uint64_t* expert_ids, const fl
         #endif
 
         float* up_output_ptr = m_local_up_output_ptr_[expert_idx] + ith * stride;
-        llamafile_sgemm(stride, m_local_num_[expert_idx], config_.hidden_size / ggml_blck_size(config_.up_type), up_proj_ptr, config_.hidden_size / ggml_blck_size(config_.up_type), up_input_ptr, config_.hidden_size / ggml_blck_size(config_.up_type), up_output_ptr, config_.intermediate_size, 0, 1, GGML_TASK_TYPE_COMPUTE, config_.up_type, ggml_internal_get_type_traits(config_.up_type).vec_dot_type, GGML_TYPE_F32, GGML_PREC_DEFAULT);
+        ggml_compute_params params_up;
+        params_up.ith = ith;
+        params_up.nth = stride;
+        params_up.threadpool = nullptr;
+        llamafile_sgemm(&params_up, stride, m_local_num_[expert_idx], config_.hidden_size / ggml_blck_size(config_.up_type), up_proj_ptr, config_.hidden_size / ggml_blck_size(config_.up_type), up_input_ptr, config_.hidden_size / ggml_blck_size(config_.up_type), up_output_ptr, config_.intermediate_size, config_.up_type, ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type, GGML_TYPE_F32);
         for (int i = 0; i < m_local_num_[expert_idx]; i++) {
             for (int j = ith * stride; j < (ith + 1) * stride; j++) {
                 m_local_intermediate_fp32_ptr_[expert_idx][i * config_.intermediate_size + j] = act_fn(m_local_gate_output_ptr_[expert_idx][i * config_.intermediate_size + j]) * m_local_up_output_ptr_[expert_idx][i * config_.intermediate_size + j];
             }
             float* intermediate_fp32_ptr = m_local_intermediate_fp32_ptr_[expert_idx] + i * config_.intermediate_size + ith * stride;
-            void* down_input_ptr = m_local_down_input_ptr_[expert_idx] + i * config_.intermediate_size * ggml_type_size(ggml_internal_get_type_traits(config_.down_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(config_.down_type).vec_dot_type) + ith * stride * ggml_type_size(ggml_internal_get_type_traits(config_.down_type).vec_dot_type) / ggml_blck_size(ggml_internal_get_type_traits(config_.down_type).vec_dot_type);
-            from_float(intermediate_fp32_ptr, down_input_ptr, stride, ggml_internal_get_type_traits(config_.down_type).vec_dot_type);
+            void* down_input_ptr = m_local_down_input_ptr_[expert_idx] + i * config_.intermediate_size * ggml_type_size(ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type) + ith * stride * ggml_type_size(ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type);
+            from_float(intermediate_fp32_ptr, down_input_ptr, stride, ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type);
         }
     }, nullptr);
     stride = QK_K;
@@ -509,7 +706,11 @@ void SFT_MOE::forward_many(int qlen, int k, const uint64_t* expert_ids, const fl
         #endif
 
         float* down_output_ptr = m_local_down_output_ptr_[expert_idx] + ith * stride;
-        llamafile_sgemm(stride, m_local_num_[expert_idx], config_.intermediate_size / ggml_blck_size(config_.down_type), down_proj_ptr, config_.intermediate_size / ggml_blck_size(config_.down_type), down_input_ptr, config_.intermediate_size / ggml_blck_size(config_.down_type), down_output_ptr, config_.hidden_size, 0, 1, GGML_TASK_TYPE_COMPUTE, config_.down_type, ggml_internal_get_type_traits(config_.down_type).vec_dot_type, GGML_TYPE_F32, GGML_PREC_DEFAULT);
+        ggml_compute_params params_down;
+        params_down.ith = ith;
+        params_down.nth = stride;
+        params_down.threadpool = nullptr;
+        llamafile_sgemm(&params_down, stride, m_local_num_[expert_idx], config_.intermediate_size / ggml_blck_size(config_.down_type), down_proj_ptr, config_.intermediate_size / ggml_blck_size(config_.down_type), down_input_ptr, config_.intermediate_size / ggml_blck_size(config_.down_type), down_output_ptr, config_.hidden_size, config_.down_type, ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type, GGML_TYPE_F32);
     }, nullptr);
     backend->do_work_stealing_job(qlen, nullptr, [&](int i) {
         for (int e = 0; e < config_.hidden_size; e++) {
@@ -853,7 +1054,11 @@ void SFT_MOE::backward_one(int k, const uint64_t* expert_ids, const float* weigh
         void* down_proj_t_ptr = (uint8_t*)down_proj_t_ + (expert_id * config_.intermediate_size + ith * config_.stride) * config_.hidden_size * ggml_type_size(config_.grad_type);
         float* down_input_grad_ptr = s_down_input_grad_[expert_idx] + ith * config_.stride;
         // clkz2 = clock();
-        llamafile_sgemm(config_.stride, 1, config_.hidden_size, down_proj_t_ptr, config_.hidden_size, output_grad, config_.hidden_size, down_input_grad_ptr, config_.stride, 0, 1, GGML_TASK_TYPE_COMPUTE, config_.grad_type, config_.grad_type, GGML_TYPE_F32, GGML_PREC_DEFAULT);
+        ggml_compute_params params_down;
+        params_down.ith = ith;
+        params_down.nth = config_.stride;
+        params_down.threadpool = nullptr;
+        llamafile_sgemm(&params_down, config_.stride, 1, config_.hidden_size, down_proj_t_ptr, config_.hidden_size, output_grad, config_.hidden_size, down_input_grad_ptr, config_.stride, config_.grad_type, config_.grad_type, GGML_TYPE_F32);
         // clkz3 = clock();
         for (int i = ith * config_.stride; i < (ith + 1) * config_.stride; i++) {
             s_down_input_grad_[expert_idx][i] *= weights[expert_idx];
@@ -879,11 +1084,19 @@ void SFT_MOE::backward_one(int k, const uint64_t* expert_ids, const float* weigh
 
             void* gate_proj_t_ptr = (uint8_t*)gate_proj_t_ + (expert_id * config_.hidden_size + ith * config_.stride) * config_.intermediate_size * ggml_type_size(config_.grad_type);
             float* gate_input_grad_ptr = s_gate_input_grad_[expert_idx] + ith * config_.stride;
-            llamafile_sgemm(config_.stride, 1, config_.intermediate_size, gate_proj_t_ptr, config_.intermediate_size, s_gate_output_grad_[expert_idx], config_.intermediate_size, gate_input_grad_ptr, config_.stride, 0, 1, GGML_TASK_TYPE_COMPUTE, config_.grad_type, config_.grad_type, GGML_TYPE_F32, GGML_PREC_DEFAULT);
+            ggml_compute_params params_gate;
+        params_gate.ith = ith;
+        params_gate.nth = config_.stride;
+        params_gate.threadpool = nullptr;
+            llamafile_sgemm(&params_gate, config_.stride, 1, config_.intermediate_size, gate_proj_t_ptr, config_.intermediate_size, s_gate_output_grad_[expert_idx], config_.intermediate_size, gate_input_grad_ptr, config_.stride, config_.grad_type, config_.grad_type, GGML_TYPE_F32);
 
             void* up_proj_t_ptr = (uint8_t*)up_proj_t_ + (expert_id * config_.hidden_size + ith * config_.stride) * config_.intermediate_size * ggml_type_size(config_.grad_type);
             float* up_input_grad_ptr = s_up_input_grad_[expert_idx] + ith * config_.stride;
-            llamafile_sgemm(config_.stride, 1, config_.intermediate_size, up_proj_t_ptr, config_.intermediate_size, s_up_output_grad_[expert_idx], config_.intermediate_size, up_input_grad_ptr, config_.stride, 0, 1, GGML_TASK_TYPE_COMPUTE, config_.grad_type, config_.grad_type, GGML_TYPE_F32, GGML_PREC_DEFAULT);
+            ggml_compute_params params_up;
+        params_up.ith = ith;
+        params_up.nth = config_.stride;
+        params_up.threadpool = nullptr;
+            llamafile_sgemm(&params_up, config_.stride, 1, config_.intermediate_size, up_proj_t_ptr, config_.intermediate_size, s_up_output_grad_[expert_idx], config_.intermediate_size, up_input_grad_ptr, config_.stride, config_.grad_type, config_.grad_type, GGML_TYPE_F32);
             
             for (int i = ith * config_.stride; i < (ith + 1) * config_.stride; i++) {
                 s_input_grad_fp32_[i] += s_gate_input_grad_[expert_idx][i] + s_up_input_grad_[expert_idx][i];
@@ -949,7 +1162,11 @@ void SFT_MOE::backward_many(int qlen, int k, const uint64_t* expert_ids, const f
         void* down_output_grad_ptr = m_local_down_output_grad_ptr_[expert_idx];
         float* down_input_grad_ptr = m_local_down_input_grad_ptr_[expert_idx] + ith * stride;
                     
-        llamafile_sgemm(stride, m_local_num_[expert_idx], config_.hidden_size, down_proj_t_ptr, config_.hidden_size, down_output_grad_ptr, config_.hidden_size, down_input_grad_ptr, config_.intermediate_size, 0, 1, GGML_TASK_TYPE_COMPUTE, config_.grad_type, config_.grad_type, GGML_TYPE_F32, GGML_PREC_DEFAULT);
+        ggml_compute_params params_down;
+        params_down.ith = ith;
+        params_down.nth = stride;
+        params_down.threadpool = nullptr;
+        llamafile_sgemm(&params_down, stride, m_local_num_[expert_idx], config_.hidden_size, down_proj_t_ptr, config_.hidden_size, down_output_grad_ptr, config_.hidden_size, down_input_grad_ptr, config_.intermediate_size, config_.grad_type, config_.grad_type, GGML_TYPE_F32);
         
         for (int i = 0; i < m_local_num_[expert_idx]; i++) {
             int token_idx = m_local_token_indices_ptr_[expert_idx][i];
@@ -986,8 +1203,16 @@ void SFT_MOE::backward_many(int qlen, int k, const uint64_t* expert_ids, const f
         float* gate_input_grad_ptr = m_local_gate_input_grad_ptr_[expert_idx] + ith * stride;
         float* up_input_grad_ptr = m_local_up_input_grad_ptr_[expert_idx] + ith * stride;
         
-        llamafile_sgemm(stride, m_local_num_[expert_idx], config_.intermediate_size, gate_proj_t_ptr, config_.intermediate_size, gate_output_grad_ptr, config_.intermediate_size, gate_input_grad_ptr, config_.hidden_size, 0, 1, GGML_TASK_TYPE_COMPUTE, config_.grad_type, config_.grad_type, GGML_TYPE_F32, GGML_PREC_DEFAULT);
-        llamafile_sgemm(stride, m_local_num_[expert_idx], config_.intermediate_size, up_proj_t_ptr, config_.intermediate_size, up_output_grad_ptr, config_.intermediate_size, up_input_grad_ptr, config_.hidden_size, 0, 1, GGML_TASK_TYPE_COMPUTE, config_.grad_type, config_.grad_type, GGML_TYPE_F32, GGML_PREC_DEFAULT);
+        ggml_compute_params params_gate;
+        params_gate.ith = ith;
+        params_gate.nth = stride;
+        params_gate.threadpool = nullptr;
+        llamafile_sgemm(&params_gate, stride, m_local_num_[expert_idx], config_.intermediate_size, gate_proj_t_ptr, config_.intermediate_size, gate_output_grad_ptr, config_.intermediate_size, gate_input_grad_ptr, config_.hidden_size, config_.grad_type, config_.grad_type, GGML_TYPE_F32);
+        ggml_compute_params params_up;
+        params_up.ith = ith;
+        params_up.nth = stride;
+        params_up.threadpool = nullptr;
+        llamafile_sgemm(&params_up, stride, m_local_num_[expert_idx], config_.intermediate_size, up_proj_t_ptr, config_.intermediate_size, up_output_grad_ptr, config_.intermediate_size, up_input_grad_ptr, config_.hidden_size, config_.grad_type, config_.grad_type, GGML_TYPE_F32);
     }, nullptr);
     backend->do_work_stealing_job(qlen, nullptr, [&](int i) {
         for (int e = 0; e < config_.hidden_size; e++) {

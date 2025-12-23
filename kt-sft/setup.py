@@ -631,7 +631,8 @@ if CUDA_HOME is not None or ROCM_HOME is not None:
     ops_module = CUDAExtension('KTransformersOps', [
         'csrc/ktransformers_ext/cuda/custom_gguf/dequant.cu',
         'csrc/ktransformers_ext/cuda/binding.cpp',
-        'csrc/ktransformers_ext/cuda/gptq_marlin/gptq_marlin.cu'
+        'csrc/ktransformers_ext/cuda/gptq_marlin/gptq_marlin.cu',
+        'csrc/ktransformers_ext/compat_torch_setdevice.cpp'
     ],
     extra_compile_args={
             'cxx': ['-O3', '-DKTRANSFORMERS_USE_CUDA', '-std=c++17'],
@@ -687,6 +688,7 @@ if not torch.xpu.is_available():
                 'csrc/custom_marlin/binding.cpp',
                 'csrc/custom_marlin/gptq_marlin/gptq_marlin.cu',
                 'csrc/custom_marlin/gptq_marlin/gptq_marlin_repack.cu',
+                'csrc/ktransformers_ext/compat_torch_setdevice.cpp',
             ],
             extra_compile_args={
                 'cxx': ['-O3'],

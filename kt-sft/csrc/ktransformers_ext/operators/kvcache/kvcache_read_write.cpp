@@ -161,7 +161,7 @@ void KVCache::update_kvcache_one_block_fp16(const ggml_fp16_t *k_in,
                                             config_.head_dim +
                                         l * 32 + m]);
                         }
-                        quantize_row_q4_0(block_fp32.data(), &block, 32);
+                        quantize_row_q4_0_ref(block_fp32.data(), &block, 32);
                         k_cache_q4[layer_id_][head_id][block_idx]
                                   [k * config_.head_dim / 32 + l] = block;
                     }
@@ -182,7 +182,7 @@ void KVCache::update_kvcache_one_block_fp16(const ggml_fp16_t *k_in,
                                             config_.head_dim +
                                         l]);
                         }
-                        quantize_row_q4_0(block_fp32.data(), &block, 32);
+                        quantize_row_q4_0_ref(block_fp32.data(), &block, 32);
                         v_cache_q4[layer_id_][head_id][block_idx]
                                   [l * config_.block_len / 32 + k] = block;
                     }
@@ -489,7 +489,7 @@ void KVCache::get_and_update_kvcache_fp16(ggml_fp16_t *k_in, ggml_fp16_t *v_in,
                                             head_id * config_.head_dim +
                                             l * 32 + m]);
                             }
-                            quantize_row_q4_0(block_fp32.data(), &block, 32);
+                            quantize_row_q4_0_ref(block_fp32.data(), &block, 32);
                             k_cache_q4[layer_id_][head_id][block_idx]
                                       [k * config_.head_dim / 32 + l] = block;
                         }
@@ -518,7 +518,7 @@ void KVCache::get_and_update_kvcache_fp16(ggml_fp16_t *k_in, ggml_fp16_t *v_in,
                                                 config_.head_dim +
                                             head_id * config_.head_dim + l]);
                             }
-                            quantize_row_q4_0(block_fp32.data(), &block, 32);
+                            quantize_row_q4_0_ref(block_fp32.data(), &block, 32);
                             v_cache_q4[layer_id_][head_id][block_idx]
                                       [l * config_.block_len / 32 + k] = block;
                         }
@@ -547,7 +547,7 @@ void KVCache::get_and_update_kvcache_fp16(ggml_fp16_t *k_in, ggml_fp16_t *v_in,
                                             head_id * config_.head_dim +
                                             l * 32 + m]);
                             }
-                            quantize_row_q8_0(block_fp32.data(), &block, 32);
+                            quantize_row_q8_0_ref(block_fp32.data(), &block, 32);
                             k_cache_q8[layer_id_][head_id][block_idx]
                                       [k * config_.head_dim / 32 + l] = block;
                         }
@@ -576,7 +576,7 @@ void KVCache::get_and_update_kvcache_fp16(ggml_fp16_t *k_in, ggml_fp16_t *v_in,
                                                 config_.head_dim +
                                             head_id * config_.head_dim + l]);
                             }
-                            quantize_row_q8_0(block_fp32.data(), &block, 32);
+                            quantize_row_q8_0_ref(block_fp32.data(), &block, 32);
                             v_cache_q8[layer_id_][head_id][block_idx]
                                       [l * config_.block_len / 32 + k] = block;
                         }
@@ -866,7 +866,7 @@ void KVCache::update_kvcache_fp16(const ggml_fp16_t *k_in,
                                                 config_.head_dim) +
                                     head_id * config_.head_dim + l * 32 + m]);
                     }
-                    quantize_row_q4_0(block_fp32.data(), &block, 32);
+                    quantize_row_q4_0_ref(block_fp32.data(), &block, 32);
 
                     k_cache_q4[layer_id_][head_id][block_idx]
                               [pos_in_block * config_.head_dim / 32 + l] =
@@ -883,7 +883,7 @@ void KVCache::update_kvcache_fp16(const ggml_fp16_t *k_in,
                         v_data_[batch_id * (q_len * config_.kv_head_num *
                                             config_.head_dim) +
                                 head_id * config_.head_dim + l]);
-                    quantize_row_q4_0(block_fp32.data(), &block, 32);
+                    quantize_row_q4_0_ref(block_fp32.data(), &block, 32);
                     v_cache_q4[layer_id_][head_id][block_idx]
                               [l * config_.block_len / 32 + pos_in_block / 32] =
                                   block;
@@ -900,7 +900,7 @@ void KVCache::update_kvcache_fp16(const ggml_fp16_t *k_in,
                                                 config_.head_dim) +
                                     head_id * config_.head_dim + l * 32 + m]);
                     }
-                    quantize_row_q8_0(block_fp32.data(), &block, 32);
+                    quantize_row_q8_0_ref(block_fp32.data(), &block, 32);
 
                     k_cache_q8[layer_id_][head_id][block_idx]
                               [pos_in_block * config_.head_dim / 32 + l] =
@@ -917,7 +917,7 @@ void KVCache::update_kvcache_fp16(const ggml_fp16_t *k_in,
                         v_data_[batch_id * (q_len * config_.kv_head_num *
                                             config_.head_dim) +
                                 head_id * config_.head_dim + l]);
-                    quantize_row_q8_0(block_fp32.data(), &block, 32);
+                    quantize_row_q8_0_ref(block_fp32.data(), &block, 32);
                     v_cache_q8[layer_id_][head_id][block_idx]
                               [l * config_.block_len / 32 + pos_in_block / 32] =
                                   block;

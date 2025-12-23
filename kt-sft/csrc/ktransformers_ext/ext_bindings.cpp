@@ -36,6 +36,8 @@
 #include <string>
 #include <stdexcept>
 
+extern "C" void ktransformers_force_link_setdevice();
+
 namespace py = pybind11;
 using namespace pybind11::literals;
 
@@ -1047,6 +1049,8 @@ class SFT_AMX_MOEBindings {
 #endif
 
 PYBIND11_MODULE(cpuinfer_ext, m) {
+    ktransformers_force_link_setdevice();
+
     py::class_<CPUInfer>(m, "CPUInfer")
         .def(py::init<int>())
         .def("submit", &CPUInfer::submit)
@@ -1118,7 +1122,13 @@ PYBIND11_MODULE(cpuinfer_ext, m) {
                              (ggml_type)up_type, (ggml_type)down_type,
                              (ggml_type)hidden_type);
         }));
-    py::class_<SFT_MOE>(sft_moe_module, "SFT_MOE")
+    py::class_<SFT_MOE, std::unique_ptr<SFT_MOE>>(sft_moe_module, "SFT_MOE")
+        // Try factory function pattern to avoid pybind11 issues with large objects
+        // This returns a unique_ptr which pybind11 handles better than direct construction
+        .def_static("create", [](SFT_MOEConfig config) {
+            return std::make_unique<SFT_MOE>(config);
+        }, "Create SFT_MOE instance using factory function")
+        // Keep direct constructor as fallback for compatibility
         .def(py::init<SFT_MOEConfig>())
         .def("warm_up", &SFT_MOEBindings::WarmUpBindinds::cpuinfer_interface)
         .def("forward", &SFT_MOEBindings::ForwardBindings::cpuinfer_interface)

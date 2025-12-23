@@ -38,9 +38,11 @@
      CPUInfer(int thread_num) {
          backend_ = new Backend(thread_num - 1);
          task_queue_ = new TaskQueue();
-         for (int i = 0; i < (1 << 16); ++i) {
-             ggml_table_f32_f16[i] = GGML_COMPUTE_FP16_TO_FP32(i);
-         }
+        // Note: ggml_table_f32_f16 may not be available in newer ggml versions
+        // If needed, declare it as: static float ggml_table_f32_f16[1 << 16];
+        // for (int i = 0; i < (1 << 16); ++i) {
+        //     ggml_table_f32_f16[i] = ggml_fp16_to_fp32((ggml_fp16_t)i);
+        // }
      }
  
      ~CPUInfer() {
