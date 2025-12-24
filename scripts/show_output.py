@@ -114,6 +114,7 @@ def show_output(
         backend_name = "CPU Only"
     
     elif backend == "cpu_gpu":
+        # Matches QUICK_START_DOCKER.md: HuggingFace backend (default), no KTransformers flags
         cmd = (
             f"printf '{prompt}\\nexit\\n' | "
             f"llamafactory-cli chat "
@@ -122,16 +123,18 @@ def show_output(
             f"--max_new_tokens {max_tokens} "
             f"--trust-remote-code"
         )
-        backend_name = "CPU + GPU (HuggingFace)"
+        backend_name = "CPU + GPU (HuggingFace - matches QUICK_START_DOCKER.md)"
     
     elif backend in ["kt", "ktransformers"]:
+        # KTransformers backend requires optimize rule
         if not kt_optimize_rule:
             model_name = Path(model_path).name
             # Check paths inside container (not host)
+            # Note: Prefer non-AMX configs first (AMX is for CPU inference)
             possible_paths = [
-                f"/app/examples/kt_optimize_rules/{model_name}-sft-amx.yaml",
-                f"/app/examples/kt_optimize_rules/{model_name}.yaml",
                 f"/app/examples/kt_optimize_rules/{model_name}-sft.yaml",
+                f"/app/examples/kt_optimize_rules/{model_name}.yaml",
+                f"/app/examples/kt_optimize_rules/{model_name}-sft-amx.yaml",  # AMX last
             ]
             
             # If running from host, check via docker exec
@@ -158,8 +161,11 @@ def show_output(
             print("❌ Error: KTransformers optimize rule not found")
             print(f"   Tried paths: {possible_paths}")
             print("   Please specify with --kt_optimize_rule")
+            print("\n   Note: For HuggingFace backend (like QUICK_START_DOCKER.md), use 'cpu_gpu' backend instead")
             return False
         
+        # Use HuggingFace backend with use_kt flag (matches compare_inference_speeds.py)
+        # This avoids KTransformers backend import errors
         cmd = (
             f"printf '{prompt}\\nexit\\n' | "
             f"llamafactory-cli chat "
@@ -167,13 +173,12 @@ def show_output(
             f"--template {template} "
             f"--max_new_tokens {max_tokens} "
             f"--trust-remote-code "
-            f"--infer_backend ktransformers "
             f"--use_kt true "
             f"--kt_optimize_rule {kt_optimize_rule} "
             f"--cpu_infer 32 "
             f"--chunk_size 8192"
         )
-        backend_name = "KTransformers"
+        backend_name = "KTransformers (HuggingFace backend + use_kt)"
     
     else:
         print(f"❌ Unknown backend: {backend}")
