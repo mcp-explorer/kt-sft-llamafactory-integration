@@ -130,10 +130,11 @@ def show_output(
         if not kt_optimize_rule:
             model_name = Path(model_path).name
             # Check paths inside container (not host)
-            # Note: Prefer non-AMX configs first (AMX is for CPU inference)
+            # Priority: base config (no SFT) > SFT config > AMX config
+            # AMX is for CPU inference, SFT configs are for fine-tuned models
             possible_paths = [
-                f"/app/examples/kt_optimize_rules/{model_name}-sft.yaml",
-                f"/app/examples/kt_optimize_rules/{model_name}.yaml",
+                f"/app/examples/kt_optimize_rules/{model_name}.yaml",  # Base config (no SFT) - preferred
+                f"/app/examples/kt_optimize_rules/{model_name}-sft.yaml",  # SFT config
                 f"/app/examples/kt_optimize_rules/{model_name}-sft-amx.yaml",  # AMX last
             ]
             
