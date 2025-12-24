@@ -35,7 +35,7 @@ docker exec llamafactory bash -c "
         --trust-remote-code \
         --infer_backend ktransformers \
         --use_kt true \
-        --kt_optimize_rule /app/examples/kt_optimize_rules/DeepSeek-V2-Lite-Chat-sft-amx.yaml \
+        --kt_optimize_rule /app/examples/kt_optimize_rules/DeepSeek-V2-Lite-Chat.yaml \
         --cpu_infer 32 \
         --chunk_size 8192
 "

@@ -508,12 +508,11 @@ Examples:
     if not kt_rule:
         # Try to find it based on model path
         model_name = Path(args.model_path).name
-        # Priority: base config (no SFT) > SFT config > AMX config
-        # AMX is for CPU inference, SFT configs are for fine-tuned models
+        # Priority: base config (no SFT) > SFT config
+        # Note: AMX configs excluded (not supported on this system)
         possible_paths = [
             f"/app/examples/kt_optimize_rules/{model_name}.yaml",  # Base config (no SFT) - preferred
             f"/app/examples/kt_optimize_rules/{model_name}-sft.yaml",  # SFT config
-            f"/app/examples/kt_optimize_rules/{model_name}-sft-amx.yaml",  # AMX last
         ]
         
         # Check if running from host or inside Docker

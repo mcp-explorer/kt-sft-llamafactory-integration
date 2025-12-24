@@ -73,7 +73,7 @@ python3 scripts/compare_inference_speeds.py \
     --model_path /app/models/deepseek-ai/DeepSeek-V2-Lite-Chat \
     --skip_cpu \
     --skip_cpu_gpu \
-    --kt_optimize_rule /app/examples/kt_optimize_rules/DeepSeek-V2-Lite-Chat-sft-amx.yaml
+    --kt_optimize_rule /app/examples/kt_optimize_rules/DeepSeek-V2-Lite-Chat.yaml
 ```
 
 ## What It Tests
@@ -117,7 +117,7 @@ The script provides:
 - Or create it directly in the container
 
 ### KTransformers test skipped
-- Ensure optimize rule exists: `/app/examples/kt_optimize_rules/DeepSeek-V2-Lite-Chat-sft-amx.yaml`
+- Ensure optimize rule exists: `/app/examples/kt_optimize_rules/DeepSeek-V2-Lite-Chat.yaml`
 - Or specify with `--kt_optimize_rule`
 
 ### Tests timeout
@@ -144,7 +144,7 @@ from scripts.compare_inference_speeds import SpeedComparison
 
 comparison = SpeedComparison(
     model_path="/app/models/deepseek-ai/DeepSeek-V2-Lite-Chat",
-    kt_optimize_rule="/app/examples/kt_optimize_rules/DeepSeek-V2-Lite-Chat-sft-amx.yaml"
+    kt_optimize_rule="/app/examples/kt_optimize_rules/DeepSeek-V2-Lite-Chat.yaml"
 )
 
 results = comparison.run_comparison(

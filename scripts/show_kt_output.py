@@ -36,12 +36,11 @@ def show_kt_output(
     # Auto-detect optimize rule if not provided
     if not kt_optimize_rule:
         model_name = Path(model_path).name
-        # Priority: base config (no SFT) > SFT config > AMX config
-        # AMX is for CPU inference, SFT configs are for fine-tuned models
+        # Priority: base config (no SFT) > SFT config
+        # Note: AMX configs excluded (not supported on this system)
         possible_paths = [
             f"/app/examples/kt_optimize_rules/{model_name}.yaml",  # Base config (no SFT) - preferred
             f"/app/examples/kt_optimize_rules/{model_name}-sft.yaml",  # SFT config
-            f"/app/examples/kt_optimize_rules/{model_name}-sft-amx.yaml",  # AMX last
         ]
         
         # If running from host, check via docker exec

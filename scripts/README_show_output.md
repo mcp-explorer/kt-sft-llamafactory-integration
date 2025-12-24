@@ -70,7 +70,7 @@ python3 scripts/show_output.py cpu_gpu \
 python3 scripts/show_output.py kt \
     --prompt "Explain quantum computing" \
     --max_tokens 200 \
-    --kt_optimize_rule /app/examples/kt_optimize_rules/DeepSeek-V2-Lite-Chat-sft-amx.yaml
+    --kt_optimize_rule /app/examples/kt_optimize_rules/DeepSeek-V2-Lite-Chat.yaml
 ```
 
 ### Show Only Response Text
