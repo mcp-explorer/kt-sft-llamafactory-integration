@@ -13,7 +13,17 @@ from ktransformers.ktransformers_ext.operators.custom_marlin.quantize.utils.marl
 from ktransformers.ktransformers_ext.operators.custom_marlin.quantize.utils.quant_utils import (
     get_pack_factor, quantize_weights, sort_weights)
 
-__cuda_arch = torch.cuda.get_device_capability()
+# Lazy CUDA arch check to avoid errors when CUDA is not available
+def _get_cuda_arch():
+    """Get CUDA architecture capability, return None if CUDA not available"""
+    try:
+        if torch.cuda.is_available():
+            return torch.cuda.get_device_capability()
+        return None
+    except RuntimeError:
+        return None
+
+__cuda_arch = _get_cuda_arch()
 
 MARLIN_TILE = 16
 
@@ -27,7 +37,7 @@ GPTQ_MARLIN_SUPPORTED_GROUP_SIZES = [-1, 32, 64, 128]
 GPTQ_MARLIN_SUPPORTED_SYM = [True]
 
 def is_marlin_supported():
-    return __cuda_arch[0] >= 8
+    return __cuda_arch is not None and __cuda_arch[0] >= 8
 
 
 def marlin_permute_weights(q_w, size_k, size_n, perm, tile=MARLIN_TILE):

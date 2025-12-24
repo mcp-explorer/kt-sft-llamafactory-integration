@@ -112,9 +112,9 @@ fp8_gemm_configs = [
     for block_m in [16, 32, 64] for block_n in [32, 64, 128] for num_stages in [3, 4, 5, 6]
 ]
 
-@triton.autotune(configs=fp8_gemm_configs, key=['N', 'K'])
+# Define the kernel function first, then try to apply autotune decorator
 @triton.jit
-def fp8_gemm_kernel(a_ptr, b_ptr, c_ptr,
+def _fp8_gemm_kernel_impl(a_ptr, b_ptr, c_ptr,
                     a_s_ptr, b_s_ptr,
                     M, N: tl.constexpr, K: tl.constexpr,
                     BLOCK_SIZE_M: tl.constexpr,
@@ -167,6 +167,16 @@ def fp8_gemm_kernel(a_ptr, b_ptr, c_ptr,
     c_ptrs = c_ptr + offs_m[:, None] * N + offs_n[None, :]
     mask = (offs_m[:, None] < M) & (offs_n[None, :] < N)
     tl.store(c_ptrs, c, mask=mask)
+
+# Try to apply autotune decorator, fallback to jit only if Triton not initialized
+try:
+    fp8_gemm_kernel = triton.autotune(configs=fp8_gemm_configs, key=['N', 'K'])(_fp8_gemm_kernel_impl)
+except RuntimeError as e:
+    if "active drivers" in str(e) or "0 active drivers" in str(e):
+        # Triton not initialized, use jit version without autotune
+        fp8_gemm_kernel = _fp8_gemm_kernel_impl
+    else:
+        raise
 
 
 def fp8_gemm(a: torch.Tensor, a_s: torch.Tensor, b: torch.Tensor, b_s: torch.Tensor):

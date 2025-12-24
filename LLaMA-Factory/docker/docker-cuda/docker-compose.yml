@@ -15,8 +15,9 @@ services:
       - /home/sean/Documents/ktransformers/LLaMA-Factory/saves:/app/saves:ro
       - /home/sean/Documents/ktransformers/kt-sft:/kt-sft:rw
     environment:
-      - LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda-12.4/lib64:/opt/conda/lib/python3.11/site-packages:/opt/conda/lib/python3.11/site-packages/torch/lib
+      - LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda-12.4/lib64:/opt/conda/lib/python3.11/site-packages:/opt/conda/lib/python3.11/site-packages/torch/lib:/opt/conda/lib/python3.11/site-packages/nvidia/cublas/lib:/opt/conda/lib/python3.11/site-packages/nvidia/cudnn/lib:/opt/conda/lib/python3.11/site-packages/nvidia/cusparse/lib
       - CUDA_HOME=/usr/local/cuda
+      - CUDA_VISIBLE_DEVICES=0
     ipc: host
     tty: true
     # shm_size: "16gb"  # ipc: host is set

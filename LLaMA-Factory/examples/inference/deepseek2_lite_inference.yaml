@@ -1,11 +1,11 @@
-model_name_or_path: deepseek-ai/DeepSeek-V2-Lite
-adapter_name_or_path: saves/Kllama_deepseekV2Lite_test
+model_name_or_path: /home/sean/Documents/ktransformers/deepseek-ai/DeepSeek-V2-Lite-Chat
+# adapter_name_or_path: saves/Kllama_deepseekV2Lite_test  # Commented out - using base model for testing
 template: deepseek
 infer_backend: ktransformers
 trust_remote_code: true
 
 use_kt: true
-kt_optimize_rule: ../../kt-sft/ktransformers/optimize/optimize_rules/DeepSeek-V2-Lite-Chat-sft.yaml
+kt_optimize_rule: ../kt-sft/ktransformers/optimize/optimize_rules/DeepSeek-V2-Lite-Chat-sft.yaml
 cpu_infer: 16
 chunk_size: 8192
 

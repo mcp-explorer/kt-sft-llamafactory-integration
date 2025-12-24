@@ -1,0 +1,17 @@
+### model
+model_name_or_path: /app/models/deepseek-ai/DeepSeek-V2-Lite-Chat
+# adapter_name_or_path: /app/saves/Kllama_deepseekV2Lite/checkpoint-11  # Commented out - using base model
+trust_remote_code: true
+
+### dataset
+template: deepseek
+
+### ktransformers
+infer_backend: ktransformers  # Required when use_kt: true
+use_kt: true
+# Use sft rule for fine-tuned models
+# If you have AMX support (lscpu | grep amx), use DeepSeek-V2-Lite-Chat-sft-amx.yaml instead
+kt_optimize_rule: /opt/conda/lib/python3.11/site-packages/ktransformers/optimize/optimize_rules/DeepSeek-V2-Lite-Chat-sft.yaml
+cpu_infer: 16
+chunk_size: 8192
+

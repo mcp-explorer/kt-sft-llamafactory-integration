@@ -10,7 +10,33 @@ import torch
 if not torch.xpu.is_available():
     import KTransformersOps
 from safetensors import safe_open
-from ktransformers.ktransformers_ext.triton.fp8gemm import fp8_gemm, act_quant, weight_dequant
+# Lazy import fp8gemm to avoid Triton initialization errors at import time
+_fp8gemm_available = None
+def _get_fp8gemm():
+    """Lazy import fp8gemm functions"""
+    global _fp8gemm_available
+    if _fp8gemm_available is None:
+        try:
+            from ktransformers.ktransformers_ext.triton.fp8gemm import fp8_gemm, act_quant, weight_dequant
+            _fp8gemm_available = {'fp8_gemm': fp8_gemm, 'act_quant': act_quant, 'weight_dequant': weight_dequant}
+        except (RuntimeError, ImportError) as e:
+            if "active drivers" in str(e) or "0 active drivers" in str(e):
+                # Triton not available, create dummy functions
+                def _dummy_fp8_gemm(*args, **kwargs):
+                    raise RuntimeError("Triton not available: fp8_gemm requires Triton initialization")
+                def _dummy_act_quant(*args, **kwargs):
+                    raise RuntimeError("Triton not available: act_quant requires Triton initialization")
+                def _dummy_weight_dequant(*args, **kwargs):
+                    raise RuntimeError("Triton not available: weight_dequant requires Triton initialization")
+                _fp8gemm_available = {
+                    'fp8_gemm': _dummy_fp8_gemm,
+                    'act_quant': _dummy_act_quant,
+                    'weight_dequant': _dummy_weight_dequant
+                }
+            else:
+                raise
+    return _fp8gemm_available
+
 from ktransformers.util.custom_gguf import *
 from safetensors.torch import save_file
 from abc import ABC, abstractmethod
@@ -245,7 +271,8 @@ class SafeTensorLoader(ModelLoader):
         if key.endswith(".weight"):
             if key[:-7] + ".weight_scale_inv" in self.tensor_file_map:
                 weight_scale_inv = f.get_tensor(key[:-7] + ".weight_scale_inv").to(device)
-                tensor = weight_dequant(tensor, weight_scale_inv)
+                fp8gemm_funcs = _get_fp8gemm()
+                tensor = fp8gemm_funcs['weight_dequant'](tensor, weight_scale_inv)
         return tensor.to(device)
     
     def has_tensor(self, name: str):
