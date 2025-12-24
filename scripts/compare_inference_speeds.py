@@ -26,6 +26,14 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 
+def is_in_docker():
+    """Check if running inside Docker container."""
+    try:
+        return Path("/.dockerenv").exists() or "docker" in Path("/proc/self/cgroup").read_text()
+    except:
+        return False
+
+
 class SpeedComparison:
     """Compare inference speeds across different backends."""
     
@@ -68,7 +76,16 @@ class SpeedComparison:
         Returns:
             (elapsed_time, token_count, output)
         """
-        full_cmd = f"export LD_LIBRARY_PATH={self.ld_library_path}:$LD_LIBRARY_PATH && {cmd}"
+        in_docker = is_in_docker()
+        
+        # Build command with environment
+        env_cmd = f"export LD_LIBRARY_PATH={self.ld_library_path}:$LD_LIBRARY_PATH && {cmd}"
+        
+        # If running inside Docker, execute directly; otherwise use docker exec
+        if in_docker:
+            full_cmd = env_cmd
+        else:
+            full_cmd = f'docker exec llamafactory bash -c "{env_cmd}"'
         
         start_time = time.time()
         try:
@@ -141,18 +158,44 @@ class SpeedComparison:
         
         if response_text:
             # Remove log lines (lines starting with [ or containing |)
-            cleaned_lines = [
-                l for l in response_text.split('\n') 
-                if l.strip() 
-                and not l.strip().startswith('[') 
-                and '|' not in l[:20]  # Skip log format lines
-                and not re.match(r'^\d{4}-\d{2}-\d{2}', l.strip())  # Skip date lines
-            ]
+            cleaned_lines = []
+            for l in response_text.split('\n'):
+                l = l.strip()
+                if not l:
+                    continue
+                # Skip log lines
+                if l.startswith('[') or '|' in l[:20]:
+                    continue
+                # Skip date lines
+                if re.match(r'^\d{4}-\d{2}-\d{2}', l):
+                    continue
+                # Stop at JSON config blocks (common in model loading output)
+                if l.startswith('{') or '"architectures"' in l or '"model_type"' in l:
+                    break
+                # Stop at loading messages
+                if 'Loading checkpoint' in l or 'loading file' in l or 'loading configuration' in l:
+                    break
+                # Stop at config blocks
+                if 'Model config' in l or 'GenerationConfig' in l:
+                    break
+                # Stop at error messages
+                if 'ImportError' in l or 'Traceback' in l or 'Error:' in l:
+                    break
+                # Stop at next User prompt (but allow first one)
+                if 'User:' in l and cleaned_lines:  # Don't break on first User:
+                    break
+                # Skip lines that look like code/imports
+                if l.startswith('from ') or l.startswith('import ') or 'File "' in l:
+                    continue
+                cleaned_lines.append(l)
+            
             response_text = ' '.join(cleaned_lines)
             
             # Count words as approximate tokens
             tokens = len(response_text.split())
-            return tokens if tokens > 5 else None  # Require at least 5 tokens
+            # Require reasonable token count (between 5 and 500 for max_tokens=100)
+            if 5 <= tokens <= 500:
+                return tokens
         
         return None
     
@@ -196,11 +239,12 @@ class SpeedComparison:
         prompt: str,
         max_tokens: int = 100
     ) -> Tuple[Optional[float], Optional[int]]:
-        """Test CPU+GPU inference (HuggingFace with device_map='auto')."""
+        """Test CPU+GPU inference (HuggingFace with device_map='auto') - matches QUICK_START.md."""
         print("\n" + "="*70)
         print("Test 2: CPU + GPU (HuggingFace, device_map='auto')")
         print("="*70)
         
+        # Match QUICK_START.md exactly: HuggingFace backend (default), no KTransformers flags
         cmd = (
             f"printf '{prompt}\\nexit\\n' | "
             f"llamafactory-cli chat "
@@ -229,15 +273,17 @@ class SpeedComparison:
         prompt: str,
         max_tokens: int = 100
     ) -> Tuple[Optional[float], Optional[int]]:
-        """Test KTransformers inference."""
+        """Test KTransformers inference with HuggingFace backend + use_kt flag."""
         print("\n" + "="*70)
-        print("Test 3: KTransformers (CPU-GPU Hybrid)")
+        print("Test 3: KTransformers (HuggingFace backend + use_kt)")
         print("="*70)
         
         if not self.kt_optimize_rule:
             print("  ⚠️  KTransformers optimize rule not provided, skipping test")
             return None, None
         
+        # Use HuggingFace backend with use_kt flag (matches training setup)
+        # This uses KTransformers optimizations but HuggingFace inference engine
         cmd = (
             f"printf '{prompt}\\nexit\\n' | "
             f"llamafactory-cli chat "
@@ -245,7 +291,6 @@ class SpeedComparison:
             f"--template {self.template} "
             f"--max_new_tokens {max_tokens} "
             f"--trust-remote-code "
-            f"--infer_backend ktransformers "
             f"--use_kt true "
             f"--kt_optimize_rule {self.kt_optimize_rule} "
             f"--cpu_infer {self.cpu_infer} "
@@ -466,12 +511,31 @@ Examples:
         possible_paths = [
             f"/app/examples/kt_optimize_rules/{model_name}-sft-amx.yaml",
             f"/app/examples/kt_optimize_rules/{model_name}.yaml",
+            f"/app/examples/kt_optimize_rules/{model_name}-sft.yaml",
         ]
-        for path in possible_paths:
-            if Path(path).exists():
-                kt_rule = path
-                print(f"📋 Auto-detected KTransformers rule: {kt_rule}")
-                break
+        
+        # Check if running from host or inside Docker
+        in_docker = is_in_docker()
+        
+        if not in_docker:
+            # Running from host - check via docker exec
+            for path in possible_paths:
+                result = subprocess.run(
+                    f'docker exec llamafactory test -f "{path}"',
+                    shell=True,
+                    capture_output=True
+                )
+                if result.returncode == 0:
+                    kt_rule = path
+                    print(f"📋 Auto-detected KTransformers rule: {kt_rule}")
+                    break
+        else:
+            # Running inside Docker - check directly
+            for path in possible_paths:
+                if Path(path).exists():
+                    kt_rule = path
+                    print(f"📋 Auto-detected KTransformers rule: {kt_rule}")
+                    break
     
     # Create comparison instance
     comparison = SpeedComparison(
