@@ -97,17 +97,63 @@ class SpeedComparison:
     
     def _extract_token_count(self, output: str) -> Optional[int]:
         """Extract token count from command output."""
-        # Try to find Assistant response
-        match = re.search(r'Assistant:\s*(.*?)(?=User:|$)', output, re.DOTALL)
-        if match:
-            response = match.group(1).strip()
-            # Remove log lines (lines starting with [)
-            lines = [l for l in response.split('\n') 
-                    if not l.strip().startswith('[') and l.strip()]
-            response_text = ' '.join(lines)
+        # Try multiple patterns to find the Assistant response
+        
+        # Pattern 1: "Assistant:" followed by text
+        patterns = [
+            r'Assistant:\s*(.*?)(?=User:|$)',  # Standard format
+            r'Assistant\s*:\s*(.*?)(?=\nUser:|\n\n|$)',  # With spaces
+            r'(?<=Assistant:)\s*(.*?)(?=User:|$)',  # Lookbehind
+        ]
+        
+        response_text = None
+        for pattern in patterns:
+            match = re.search(pattern, output, re.DOTALL | re.IGNORECASE)
+            if match:
+                response_text = match.group(1).strip()
+                break
+        
+        # If no Assistant: pattern found, try to find any substantial text output
+        if not response_text:
+            # Look for text blocks that might be responses
+            # Skip lines that are clearly logs (contain [INFO], [WARNING], etc.)
+            lines = output.split('\n')
+            response_lines = []
+            in_response = False
+            for line in lines:
+                # Skip log lines
+                if re.match(r'^\[.*\]', line) or 'INFO|' in line or 'WARNING|' in line:
+                    continue
+                # Skip empty lines at start
+                if not in_response and not line.strip():
+                    continue
+                # Start collecting when we see substantial text
+                if line.strip() and len(line.strip()) > 10:
+                    in_response = True
+                if in_response:
+                    # Stop at next User: prompt or command prompt
+                    if 'User:' in line or line.strip().startswith('$') or line.strip().startswith('#'):
+                        break
+                    response_lines.append(line.strip())
+            
+            if response_lines:
+                response_text = ' '.join(response_lines)
+        
+        if response_text:
+            # Remove log lines (lines starting with [ or containing |)
+            cleaned_lines = [
+                l for l in response_text.split('\n') 
+                if l.strip() 
+                and not l.strip().startswith('[') 
+                and '|' not in l[:20]  # Skip log format lines
+                and not re.match(r'^\d{4}-\d{2}-\d{2}', l.strip())  # Skip date lines
+            ]
+            response_text = ' '.join(cleaned_lines)
+            
             # Count words as approximate tokens
             tokens = len(response_text.split())
-            return tokens if tokens > 0 else None
+            return tokens if tokens > 5 else None  # Require at least 5 tokens
+        
         return None
     
     def test_cpu_only(
@@ -117,17 +163,18 @@ class SpeedComparison:
     ) -> Tuple[Optional[float], Optional[int]]:
         """Test CPU-only inference."""
         print("\n" + "="*70)
-        print("Test 1: CPU Only (device_map='cpu')")
+        print("Test 1: CPU Only (CUDA_VISIBLE_DEVICES='')")
         print("="*70)
         
+        # Force CPU-only by hiding GPU from CUDA
         cmd = (
+            f"CUDA_VISIBLE_DEVICES='' "
             f"printf '{prompt}\\nexit\\n' | "
             f"llamafactory-cli chat "
             f"--model_name_or_path {self.model_path} "
             f"--template {self.template} "
             f"--max_new_tokens {max_tokens} "
-            f"--trust-remote-code "
-            f"--device_map cpu"
+            f"--trust-remote-code"
         )
         
         elapsed, tokens, output = self._run_command(cmd)
