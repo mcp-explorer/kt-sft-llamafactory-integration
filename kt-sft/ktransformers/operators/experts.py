@@ -462,7 +462,15 @@ class KSFTExpertsCPU(torch.autograd.Function):
     output_gpu_map:dict = {} # Manage output tensor buffer on different gpu
     #stream_map:dict = {} # Manage cuda stream on different gpu
     #gguf_loader:GGUFLoader = None
-    CPU_INFER = CPUInfer(Config().cpu_infer)
+    _CPU_INFER = None
+    
+    @classmethod
+    def get_cpu_infer(cls):
+        """Lazy initialization of CPU_INFER to ensure Config().cpu_infer is set."""
+        if cls._CPU_INFER is None:
+            cpu_infer_threads = max(1, Config().cpu_infer)  # Ensure at least 1 thread
+            cls._CPU_INFER = CPUInfer(cpu_infer_threads)
+        return cls._CPU_INFER
     def __init__(
         self,
         key: str,
@@ -647,7 +655,7 @@ class KSFTExpertsCPU(torch.autograd.Function):
         #print(self.gate_type, self.up_type, self.down_type)
         n_routed_experts = self.n_routed_experts
         # n_routed_experts = len(self.orig_module)
-        self.cpu_infer = KSFTExpertsCPU.CPU_INFER
+        self.cpu_infer = KSFTExpertsCPU.get_cpu_infer()
         
         model_dtype = torch.get_default_dtype()
         if torch.xpu.is_available() and model_dtype == torch.float16:
