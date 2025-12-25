@@ -72,6 +72,14 @@ void Linear::forward_many(int qlen, const void* input, void* output, Backend* ba
         params.ith = ith;
         params.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params.threadpool = nullptr;
+        if (params.nth <= 0) { 
+            fprintf(stderr, "[Linear DEBUG] params.nth is %ld, fixing to 1 (nth=%d, config_.stride=%d)\n", params.nth, nth, config_.stride);
+            params.nth = 1;
+        }
+        if (params.nth <= 0) {
+            fprintf(stderr, "[Linear DEBUG] CRITICAL: params.nth is still %ld after fix!\n", params.nth);
+            abort();
+        }
         llamafile_sgemm(&params, config_.stride, qlen, config_.input_size / ggml_blck_size(config_.proj_type), proj_ptr, config_.input_size / ggml_blck_size(config_.proj_type), proj_input_ptr, config_.input_size / ggml_blck_size(config_.proj_type), proj_output_ptr, config_.output_size, config_.proj_type, ggml_get_type_traits_cpu(config_.proj_type)->vec_dot_type, GGML_TYPE_F32);
         if (config_.stride % ggml_blck_size(config_.hidden_type) == 0) {
             for (int i = 0; i < qlen; i++) {

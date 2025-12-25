@@ -190,6 +190,14 @@ void MOE::forward_one(int k, const uint64_t* expert_ids, const float* weights, c
         params.ith = ith;
         params.nth = std::max(1, (int)config_.stride);  // Ensure nth > 0 to avoid assertion failure
         params.threadpool = nullptr;
+        if (params.nth <= 0) { 
+            fprintf(stderr, "[MOE DEBUG] params.nth is %ld, fixing to 1 (config_.stride=%d)\n", params.nth, config_.stride);
+            params.nth = 1;
+        }
+        if (params.nth <= 0) {
+            fprintf(stderr, "[MOE DEBUG] CRITICAL: params.nth is still %ld after fix!\n", params.nth);
+            abort();
+        }
         llamafile_sgemm(&params, config_.stride, 1, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_proj_ptr, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_input_ptr, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_output_ptr, config_.stride, config_.gate_type, ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type, GGML_TYPE_F32);
 
         #ifdef USE_NUMA
@@ -203,6 +211,14 @@ void MOE::forward_one(int k, const uint64_t* expert_ids, const float* weights, c
         params_up.ith = ith;
         params_up.nth = std::max(1, (int)config_.stride);  // Ensure nth > 0 to avoid assertion failure
         params_up.threadpool = nullptr;
+        if (params_up.nth <= 0) { 
+            fprintf(stderr, "[MOE DEBUG] params_up.nth is %ld, fixing to 1 (config_.stride=%d)\n", params_up.nth, config_.stride);
+            params_up.nth = 1;
+        }
+        if (params_up.nth <= 0) {
+            fprintf(stderr, "[MOE DEBUG] CRITICAL: params_up.nth is still %ld after fix!\n", params_up.nth);
+            abort();
+        }
         llamafile_sgemm(&params_up, config_.stride, 1, config_.hidden_size / ggml_blck_size(config_.up_type), up_proj_ptr, config_.hidden_size / ggml_blck_size(config_.up_type), up_input_ptr, config_.hidden_size / ggml_blck_size(config_.up_type), up_output_ptr, config_.stride, config_.up_type, ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type, GGML_TYPE_F32);
         for (int i = ith * config_.stride; i < (ith + 1) * config_.stride; i++) {
             s_intermediate_fp32_[expert_idx][i] = act_fn(s_gate_output_[expert_idx][i]) * s_up_output_[expert_idx][i];

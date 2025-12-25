@@ -97,6 +97,14 @@ void MLP::forward_many(int qlen, const void* input, void* output, Backend* backe
         params.ith = ith;
         params.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params.threadpool = nullptr;
+        if (params.nth <= 0) { 
+            fprintf(stderr, "[MLP DEBUG] params.nth is %ld, fixing to 1 (nth=%d, config_.stride=%d)\n", params.nth, nth, config_.stride);
+            params.nth = 1;
+        }
+        if (params.nth <= 0) {
+            fprintf(stderr, "[MLP DEBUG] CRITICAL: params.nth is still %ld after fix!\n", params.nth);
+            abort();
+        }
         llamafile_sgemm(&params, config_.stride, qlen, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_proj_ptr, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_input_ptr, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_output_ptr, config_.intermediate_size, config_.gate_type, ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type, GGML_TYPE_F32);
         void* up_proj_ptr = (uint8_t*)up_proj_ + ith * config_.stride * config_.hidden_size * ggml_type_size(config_.up_type) / ggml_blck_size(config_.up_type);
         float* up_output_ptr = up_output_ + ith * config_.stride;

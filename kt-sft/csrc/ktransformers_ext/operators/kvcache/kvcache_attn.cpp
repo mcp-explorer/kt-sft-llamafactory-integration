@@ -933,6 +933,14 @@ void KVCache::calculate_block_similarity_layer_(
         params.ith = ith;
         params.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params.threadpool = nullptr;
+        if (params.nth <= 0) { 
+            fprintf(stderr, "[KVCache DEBUG] params.nth is %ld, fixing to 1 (nth=%d)\n", params.nth, nth);
+            params.nth = 1;
+        }
+        if (params.nth <= 0) {
+            fprintf(stderr, "[KVCache DEBUG] CRITICAL: params.nth is still %ld after fix!\n", params.nth);
+            abort();
+        }
                         bool ok = llamafile_sgemm(
                             &params,
                             block_num, 1, config_.q_head_num * config_.head_dim,
