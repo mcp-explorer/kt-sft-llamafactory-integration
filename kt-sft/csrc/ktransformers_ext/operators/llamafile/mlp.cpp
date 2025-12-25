@@ -88,13 +88,14 @@ void MLP::forward_many(int qlen, const void* input, void* output, Backend* backe
         }
     }
     int nth = config_.intermediate_size / config_.stride;
+    if (nth <= 0) nth = 1;  // Safety check: ensure nth > 0
     backend->do_work_stealing_job(nth, nullptr, [&](int task_id) {
         int ith = task_id;
         void* gate_proj_ptr = (uint8_t*)gate_proj_ + ith * config_.stride * config_.hidden_size * ggml_type_size(config_.gate_type) / ggml_blck_size(config_.gate_type);
         float* gate_output_ptr = gate_output_ + ith * config_.stride;
         ggml_compute_params params;
         params.ith = ith;
-        params.nth = nth;
+        params.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params.threadpool = nullptr;
         llamafile_sgemm(&params, config_.stride, qlen, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_proj_ptr, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_input_ptr, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_output_ptr, config_.intermediate_size, config_.gate_type, ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type, GGML_TYPE_F32);
         void* up_proj_ptr = (uint8_t*)up_proj_ + ith * config_.stride * config_.hidden_size * ggml_type_size(config_.up_type) / ggml_blck_size(config_.up_type);
@@ -115,13 +116,14 @@ void MLP::forward_many(int qlen, const void* input, void* output, Backend* backe
         from_float(intermediate_fp32_, down_input_, qlen * config_.intermediate_size, ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type);
     }
     nth = config_.hidden_size / config_.stride;
+    if (nth <= 0) nth = 1;  // Safety check: ensure nth > 0
     backend->do_work_stealing_job(nth, nullptr, [&](int task_id) {
         int ith = task_id;
         void* down_proj_ptr = (uint8_t*)down_proj_ + ith * config_.stride * config_.intermediate_size * ggml_type_size(config_.down_type) / ggml_blck_size(config_.down_type);
         float* down_output_ptr = down_output_ + ith * config_.stride;
         ggml_compute_params params2;
         params2.ith = ith;
-        params2.nth = nth;
+        params2.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params2.threadpool = nullptr;
         llamafile_sgemm(&params2, config_.stride, qlen, config_.intermediate_size / ggml_blck_size(config_.down_type), down_proj_ptr, config_.intermediate_size / ggml_blck_size(config_.down_type), down_input_, config_.intermediate_size / ggml_blck_size(config_.down_type), down_output_ptr, config_.hidden_size, config_.down_type, ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type, GGML_TYPE_F32);
         if (config_.stride % ggml_blck_size(config_.hidden_type) == 0) {

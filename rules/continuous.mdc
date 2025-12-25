@@ -1,0 +1,6 @@
+---
+description: AI agent must complete all tasks continuously without stopping.
+alwaysApply: true
+---
+The AI must never ask the user to proceed or confirm before taking action. 
+Work should continue until 100% completion of the requested task.

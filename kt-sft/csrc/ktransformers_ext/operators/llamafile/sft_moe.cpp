@@ -513,6 +513,7 @@ void SFT_MOE::forward_one(int k, const uint64_t* expert_ids, const float* weight
         }
     }
     int nth = config_.intermediate_size / config_.stride;
+    if (nth <= 0) nth = 1;  // Safety check: ensure nth > 0
     backend->do_work_stealing_job(nth * k, nullptr, [&](int task_id) {
         int expert_idx = task_id / nth;
         uint64_t expert_id = expert_ids[expert_idx];
@@ -527,8 +528,9 @@ void SFT_MOE::forward_one(int k, const uint64_t* expert_ids, const float* weight
         float* gate_output_ptr = s_gate_output_[expert_idx] + ith * config_.stride;
         ggml_compute_params params_gate;
         params_gate.ith = ith;
-        params_gate.nth = std::max(1, config_.stride);  // Ensure nth > 0 to avoid assertion failure
+        params_gate.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params_gate.threadpool = nullptr;
+        if (params_gate.nth <= 0) { params_gate.nth = 1; }  // Final safety check
         llamafile_sgemm(&params_gate, config_.stride, 1, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_proj_ptr, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_input_ptr, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_output_ptr, config_.stride, config_.gate_type, ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type, GGML_TYPE_F32);
 
         #ifdef USE_NUMA
@@ -540,8 +542,9 @@ void SFT_MOE::forward_one(int k, const uint64_t* expert_ids, const float* weight
         float* up_output_ptr = s_up_output_[expert_idx] + ith * config_.stride;
         ggml_compute_params params_up;
         params_up.ith = ith;
-        params_up.nth = std::max(1, config_.stride);  // Ensure nth > 0 to avoid assertion failure
+        params_up.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params_up.threadpool = nullptr;
+        if (params_up.nth <= 0) { params_up.nth = 1; }  // Final safety check
         llamafile_sgemm(&params_up, config_.stride, 1, config_.hidden_size / ggml_blck_size(config_.up_type), up_proj_ptr, config_.hidden_size / ggml_blck_size(config_.up_type), up_input_ptr, config_.hidden_size / ggml_blck_size(config_.up_type), up_output_ptr, config_.stride, config_.up_type, ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type, GGML_TYPE_F32);
         for (int i = ith * config_.stride; i < (ith + 1) * config_.stride; i++) {
             s_intermediate_fp32_[expert_idx][i] = act_fn(s_gate_output_[expert_idx][i]) * s_up_output_[expert_idx][i];
@@ -575,7 +578,7 @@ void SFT_MOE::forward_one(int k, const uint64_t* expert_ids, const float* weight
             float* down_output_ptr = s_down_output_[expert_idx] + ith * config_.stride;
             ggml_compute_params params_down;
         params_down.ith = ith;
-        params_down.nth = std::max(1, config_.stride);  // Ensure nth > 0 to avoid assertion failure
+        params_down.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params_down.threadpool = nullptr;
             llamafile_sgemm(&params_down, config_.stride, 1, config_.intermediate_size / ggml_blck_size(config_.down_type), down_proj_ptr, config_.intermediate_size / ggml_blck_size(config_.down_type), s_down_input_[expert_idx], config_.intermediate_size / ggml_blck_size(config_.down_type), down_output_ptr, config_.stride, config_.down_type, ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type, GGML_TYPE_F32);
             for (int i = ith * config_.stride; i < (ith + 1) * config_.stride; i++) {
@@ -677,8 +680,9 @@ void SFT_MOE::forward_many(int qlen, int k, const uint64_t* expert_ids, const fl
         float* gate_output_ptr = m_local_gate_output_ptr_[expert_idx] + ith * stride;
         ggml_compute_params params_gate;
         params_gate.ith = ith;
-        params_gate.nth = std::max(1, stride);  // Ensure nth > 0 to avoid assertion failure
+        params_gate.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params_gate.threadpool = nullptr;
+        if (params_gate.nth <= 0) { params_gate.nth = 1; }  // Final safety check
         llamafile_sgemm(&params_gate, stride, m_local_num_[expert_idx], config_.hidden_size / ggml_blck_size(config_.gate_type), gate_proj_ptr, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_input_ptr, config_.hidden_size / ggml_blck_size(config_.gate_type), gate_output_ptr, config_.intermediate_size, config_.gate_type, ggml_get_type_traits_cpu(config_.gate_type)->vec_dot_type, GGML_TYPE_F32);
         void* up_input_ptr = m_local_up_input_ptr_[expert_idx];
 
@@ -691,8 +695,9 @@ void SFT_MOE::forward_many(int qlen, int k, const uint64_t* expert_ids, const fl
         float* up_output_ptr = m_local_up_output_ptr_[expert_idx] + ith * stride;
         ggml_compute_params params_up;
         params_up.ith = ith;
-        params_up.nth = std::max(1, stride);  // Ensure nth > 0 to avoid assertion failure
+        params_up.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params_up.threadpool = nullptr;
+        if (params_up.nth <= 0) { params_up.nth = 1; }  // Final safety check
         llamafile_sgemm(&params_up, stride, m_local_num_[expert_idx], config_.hidden_size / ggml_blck_size(config_.up_type), up_proj_ptr, config_.hidden_size / ggml_blck_size(config_.up_type), up_input_ptr, config_.hidden_size / ggml_blck_size(config_.up_type), up_output_ptr, config_.intermediate_size, config_.up_type, ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type, GGML_TYPE_F32);
         for (int i = 0; i < m_local_num_[expert_idx]; i++) {
             for (int j = ith * stride; j < (ith + 1) * stride; j++) {
@@ -723,8 +728,9 @@ void SFT_MOE::forward_many(int qlen, int k, const uint64_t* expert_ids, const fl
         float* down_output_ptr = m_local_down_output_ptr_[expert_idx] + ith * stride;
         ggml_compute_params params_down;
         params_down.ith = ith;
-        params_down.nth = std::max(1, stride);  // Ensure nth > 0 to avoid assertion failure
+        params_down.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params_down.threadpool = nullptr;
+        if (params_down.nth <= 0) { params_down.nth = 1; }  // Final safety check
         llamafile_sgemm(&params_down, stride, m_local_num_[expert_idx], config_.intermediate_size / ggml_blck_size(config_.down_type), down_proj_ptr, config_.intermediate_size / ggml_blck_size(config_.down_type), down_input_ptr, config_.intermediate_size / ggml_blck_size(config_.down_type), down_output_ptr, config_.hidden_size, config_.down_type, ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type, GGML_TYPE_F32);
     }, nullptr);
     backend->do_work_stealing_job(qlen, nullptr, [&](int i) {
@@ -1071,8 +1077,9 @@ void SFT_MOE::backward_one(int k, const uint64_t* expert_ids, const float* weigh
         // clkz2 = clock();
         ggml_compute_params params_down;
         params_down.ith = ith;
-        params_down.nth = std::max(1, config_.stride);  // Ensure nth > 0 to avoid assertion failure
+        params_down.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params_down.threadpool = nullptr;
+        if (params_down.nth <= 0) { params_down.nth = 1; }  // Final safety check
         llamafile_sgemm(&params_down, config_.stride, 1, config_.hidden_size, down_proj_t_ptr, config_.hidden_size, output_grad, config_.hidden_size, down_input_grad_ptr, config_.stride, config_.grad_type, config_.grad_type, GGML_TYPE_F32);
         // clkz3 = clock();
         for (int i = ith * config_.stride; i < (ith + 1) * config_.stride; i++) {
@@ -1101,7 +1108,7 @@ void SFT_MOE::backward_one(int k, const uint64_t* expert_ids, const float* weigh
             float* gate_input_grad_ptr = s_gate_input_grad_[expert_idx] + ith * config_.stride;
             ggml_compute_params params_gate;
         params_gate.ith = ith;
-        params_gate.nth = std::max(1, config_.stride);  // Ensure nth > 0 to avoid assertion failure
+        params_gate.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params_gate.threadpool = nullptr;
             llamafile_sgemm(&params_gate, config_.stride, 1, config_.intermediate_size, gate_proj_t_ptr, config_.intermediate_size, s_gate_output_grad_[expert_idx], config_.intermediate_size, gate_input_grad_ptr, config_.stride, config_.grad_type, config_.grad_type, GGML_TYPE_F32);
 
@@ -1109,7 +1116,7 @@ void SFT_MOE::backward_one(int k, const uint64_t* expert_ids, const float* weigh
             float* up_input_grad_ptr = s_up_input_grad_[expert_idx] + ith * config_.stride;
             ggml_compute_params params_up;
         params_up.ith = ith;
-        params_up.nth = std::max(1, config_.stride);  // Ensure nth > 0 to avoid assertion failure
+        params_up.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params_up.threadpool = nullptr;
             llamafile_sgemm(&params_up, config_.stride, 1, config_.intermediate_size, up_proj_t_ptr, config_.intermediate_size, s_up_output_grad_[expert_idx], config_.intermediate_size, up_input_grad_ptr, config_.stride, config_.grad_type, config_.grad_type, GGML_TYPE_F32);
             
@@ -1184,8 +1191,9 @@ void SFT_MOE::backward_many(int qlen, int k, const uint64_t* expert_ids, const f
                     
         ggml_compute_params params_down;
         params_down.ith = ith;
-        params_down.nth = std::max(1, stride);  // Ensure nth > 0 to avoid assertion failure
+        params_down.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params_down.threadpool = nullptr;
+        if (params_down.nth <= 0) { params_down.nth = 1; }  // Final safety check
         llamafile_sgemm(&params_down, stride, m_local_num_[expert_idx], config_.hidden_size, down_proj_t_ptr, config_.hidden_size, down_output_grad_ptr, config_.hidden_size, down_input_grad_ptr, config_.intermediate_size, config_.grad_type, config_.grad_type, GGML_TYPE_F32);
         
         for (int i = 0; i < m_local_num_[expert_idx]; i++) {
@@ -1229,13 +1237,15 @@ void SFT_MOE::backward_many(int qlen, int k, const uint64_t* expert_ids, const f
         
         ggml_compute_params params_gate;
         params_gate.ith = ith;
-        params_gate.nth = std::max(1, stride);  // Ensure nth > 0 to avoid assertion failure
+        params_gate.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params_gate.threadpool = nullptr;
+        if (params_gate.nth <= 0) { params_gate.nth = 1; }  // Final safety check
         llamafile_sgemm(&params_gate, stride, m_local_num_[expert_idx], config_.intermediate_size, gate_proj_t_ptr, config_.intermediate_size, gate_output_grad_ptr, config_.intermediate_size, gate_input_grad_ptr, config_.hidden_size, config_.grad_type, config_.grad_type, GGML_TYPE_F32);
         ggml_compute_params params_up;
         params_up.ith = ith;
-        params_up.nth = std::max(1, stride);  // Ensure nth > 0 to avoid assertion failure
+        params_up.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params_up.threadpool = nullptr;
+        if (params_up.nth <= 0) { params_up.nth = 1; }  // Final safety check
         llamafile_sgemm(&params_up, stride, m_local_num_[expert_idx], config_.intermediate_size, up_proj_t_ptr, config_.intermediate_size, up_output_grad_ptr, config_.intermediate_size, up_input_grad_ptr, config_.hidden_size, config_.grad_type, config_.grad_type, GGML_TYPE_F32);
     }, nullptr);
     backend->do_work_stealing_job(qlen, nullptr, [&](int i) {

@@ -924,13 +924,14 @@ void KVCache::calculate_block_similarity_layer_(
             }
             if (is_seq) {
                 int nth = backend->get_thread_num();
+                if (nth <= 0) nth = 1;  // Safety check: ensure nth > 0
                 backend->do_work_stealing_job(
                     nth, nullptr,
                     [&](int task_id) {
                         int ith = task_id;
                         ggml_compute_params params;
         params.ith = ith;
-        params.nth = nth;
+        params.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params.threadpool = nullptr;
                         bool ok = llamafile_sgemm(
                             &params,
