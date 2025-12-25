@@ -87,6 +87,12 @@ SFT_MOE::SFT_MOE(SFT_MOEConfig config) {
     // This ensures config data is captured before Python might destroy the config object
     config_ = config;
     
+    // Safety check: ensure stride is never 0 (causes assertion failure in llamafile_sgemm)
+    if (config_.stride <= 0) {
+        fprintf(stderr, "[SFT_MOE] ERROR: config.stride is %d, must be > 0! Setting to 64.\n", config_.stride);
+        config_.stride = 64;  // Default safe value
+    }
+    
     // Store pointers from config immediately to avoid accessing destroyed config
     void* gate_proj_ptr = config_.gate_proj;
     void* up_proj_ptr = config_.up_proj;
@@ -650,7 +656,12 @@ void SFT_MOE::forward_many(int qlen, int k, const uint64_t* expert_ids, const fl
             memcpy(m_local_up_input_ptr_[expert_ids[i * k + j]] + m_local_pos_[i][j] * config_.hidden_size * ggml_type_size(ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type), up_input_ptr, config_.hidden_size * ggml_type_size(ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type) / ggml_blck_size(ggml_get_type_traits_cpu(config_.up_type)->vec_dot_type));
         }
     }, nullptr);
-    int stride = QK_K;
+    // Use config_.stride if QK_K is not defined or is 0, otherwise use QK_K
+    #ifndef QK_K
+    #define QK_K 256  // Default quantization block size
+    #endif
+    int stride = (QK_K > 0) ? QK_K : config_.stride;
+    if (stride <= 0) stride = 64;  // Safety fallback
     int nth = config_.intermediate_size / stride;
     backend->do_work_stealing_job(nth * config_.expert_num, nullptr, [&](int task_id) {
         uint64_t expert_idx = task_id / nth;
@@ -692,7 +703,11 @@ void SFT_MOE::forward_many(int qlen, int k, const uint64_t* expert_ids, const fl
             from_float(intermediate_fp32_ptr, down_input_ptr, stride, ggml_get_type_traits_cpu(config_.down_type)->vec_dot_type);
         }
     }, nullptr);
-    stride = QK_K;
+    #ifndef QK_K
+    #define QK_K 256  // Default quantization block size
+    #endif
+    stride = (QK_K > 0) ? QK_K : config_.stride;
+    if (stride <= 0) stride = 64;  // Safety fallback
     nth = config_.hidden_size / stride;
     backend->do_work_stealing_job(nth * config_.expert_num, nullptr, [&](int task_id) {
         uint64_t expert_idx = task_id / nth;
@@ -1152,7 +1167,12 @@ void SFT_MOE::backward_many(int qlen, int k, const uint64_t* expert_ids, const f
 
     // get_transpose(backend);
 
-    int stride = QK_K;
+    // Use config_.stride if QK_K is not defined or is 0, otherwise use QK_K
+    #ifndef QK_K
+    #define QK_K 256  // Default quantization block size
+    #endif
+    int stride = (QK_K > 0) ? QK_K : config_.stride;
+    if (stride <= 0) stride = 64;  // Safety fallback
     int nth = config_.intermediate_size / stride;
     backend->do_work_stealing_job(nth * config_.expert_num, nullptr, [&](int task_id) {
         uint64_t expert_idx = task_id / nth;
@@ -1190,7 +1210,11 @@ void SFT_MOE::backward_many(int qlen, int k, const uint64_t* expert_ids, const f
             from_float(up_output_grad_fp32_ptr, up_output_grad_ptr, stride, config_.grad_type);
         }
     }, nullptr);
-    stride = QK_K;
+    #ifndef QK_K
+    #define QK_K 256  // Default quantization block size
+    #endif
+    stride = (QK_K > 0) ? QK_K : config_.stride;
+    if (stride <= 0) stride = 64;  // Safety fallback
     nth = config_.hidden_size / stride;
     backend->do_work_stealing_job(nth * config_.expert_num, nullptr, [&](int task_id) {
         uint64_t expert_idx = task_id / nth;
