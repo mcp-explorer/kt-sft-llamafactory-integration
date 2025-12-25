@@ -15,18 +15,6 @@
 #include <cstdint>
 #include <cstring>
 
-// Wrapper to check params.nth before calling llamafile_sgemm
-static bool safe_llamafile_sgemm(const ggml_compute_params* params, int64_t m, int64_t n, int64_t k, const void* a, int64_t lda, const void* b, int64_t ldb, void* c, int64_t ldc, int type_a, int type_b, int type_c) {
-    if (params && params->nth <= 0) {
-        fprintf(stderr, "[SAFE_WRAPPER] CRITICAL: params->nth is %ld! Fixing to 1 before llamafile_sgemm call.\n", params->nth);
-        // Create a modified params with nth=1
-        ggml_compute_params safe_params = *params;
-        safe_params.nth = 1;
-        return llamafile_sgemm(&safe_params, m, n, k, a, lda, b, ldb, c, ldc, type_a, type_b, type_c);
-    }
-    return llamafile_sgemm(params, m, n, k, a, lda, b, ldb, c, ldc, type_a, type_b, type_c);
-}
-
 // Forward declare if not defined
 #ifndef GGML_COMPUTE_PARAMS_DEFINED
 #include <cstdint>
@@ -587,6 +575,10 @@ void SFT_MOE::forward_one(int k, const uint64_t* expert_ids, const float* weight
         }
     }
     nth = config_.hidden_size / config_.stride;
+    if (nth <= 0) {
+        fprintf(stderr, "[SFT_MOE DEBUG forward_one] nth recalculated as %d (hidden_size=%ld, stride=%d), fixing to 1\n", nth, config_.hidden_size, config_.stride);
+        nth = 1;  // Safety check
+    }
     backend->do_work_stealing_job(nth, nullptr, [&](int task_id) {
         int ith = task_id;
         for (int i = ith * config_.stride; i < (ith + 1) * config_.stride; i++) {
@@ -700,6 +692,10 @@ void SFT_MOE::forward_many(int qlen, int k, const uint64_t* expert_ids, const fl
     int stride = (QK_K > 0) ? QK_K : config_.stride;
     if (stride <= 0) stride = 64;  // Safety fallback
     int nth = config_.intermediate_size / stride;
+    if (nth <= 0) {
+        fprintf(stderr, "[SFT_MOE DEBUG forward_many] nth calculated as %d (intermediate_size=%ld, stride=%d), fixing to 1\n", nth, config_.intermediate_size, stride);
+        nth = 1;  // Safety check
+    }
     backend->do_work_stealing_job(nth * config_.expert_num, nullptr, [&](int task_id) {
         uint64_t expert_idx = task_id / nth;
         int ith = task_id % nth;
@@ -755,6 +751,10 @@ void SFT_MOE::forward_many(int qlen, int k, const uint64_t* expert_ids, const fl
     stride = (QK_K > 0) ? QK_K : config_.stride;
     if (stride <= 0) stride = 64;  // Safety fallback
     nth = config_.hidden_size / stride;
+    if (nth <= 0) {
+        fprintf(stderr, "[SFT_MOE DEBUG forward_many] nth recalculated as %d (hidden_size=%ld, stride=%d), fixing to 1\n", nth, config_.hidden_size, stride);
+        nth = 1;  // Safety check
+    }
     backend->do_work_stealing_job(nth * config_.expert_num, nullptr, [&](int task_id) {
         uint64_t expert_idx = task_id / nth;
         int ith = task_id % nth;
@@ -1115,6 +1115,10 @@ void SFT_MOE::backward_one(int k, const uint64_t* expert_ids, const float* weigh
 	// clk1 = clock();
 	// clk2 = clock();
     int nth = config_.intermediate_size / config_.stride;
+    if (nth <= 0) {
+        fprintf(stderr, "[SFT_MOE DEBUG backward_one] nth calculated as %d (intermediate_size=%ld, stride=%d), fixing to 1\n", nth, config_.intermediate_size, config_.stride);
+        nth = 1;  // Safety check
+    }
     backend->do_work_stealing_job(nth * k, nullptr, [&](int task_id) {
         int expert_idx = task_id / nth;
         uint64_t expert_id = expert_ids[expert_idx];
@@ -1151,6 +1155,10 @@ void SFT_MOE::backward_one(int k, const uint64_t* expert_ids, const float* weigh
 
 	// clk3 = clock();
     nth = config_.hidden_size / config_.stride;
+    if (nth <= 0) {
+        fprintf(stderr, "[SFT_MOE DEBUG backward_one] nth recalculated as %d (hidden_size=%ld, stride=%d), fixing to 1\n", nth, config_.hidden_size, config_.stride);
+        nth = 1;  // Safety check
+    }
     backend->do_work_stealing_job(nth, nullptr, [&](int task_id) {
         int ith = task_id;
         for (int i = ith * config_.stride; i < (ith + 1) * config_.stride; i++) {
@@ -1236,6 +1244,10 @@ void SFT_MOE::backward_many(int qlen, int k, const uint64_t* expert_ids, const f
     int stride = (QK_K > 0) ? QK_K : config_.stride;
     if (stride <= 0) stride = 64;  // Safety fallback
     int nth = config_.intermediate_size / stride;
+    if (nth <= 0) {
+        fprintf(stderr, "[SFT_MOE DEBUG backward_many] nth calculated as %d (intermediate_size=%ld, stride=%d), fixing to 1\n", nth, config_.intermediate_size, stride);
+        nth = 1;  // Safety check
+    }
     backend->do_work_stealing_job(nth * config_.expert_num, nullptr, [&](int task_id) {
         uint64_t expert_idx = task_id / nth;
         int ith = task_id % nth;
@@ -1286,6 +1298,10 @@ void SFT_MOE::backward_many(int qlen, int k, const uint64_t* expert_ids, const f
     stride = (QK_K > 0) ? QK_K : config_.stride;
     if (stride <= 0) stride = 64;  // Safety fallback
     nth = config_.hidden_size / stride;
+    if (nth <= 0) {
+        fprintf(stderr, "[SFT_MOE DEBUG backward_many] nth recalculated as %d (hidden_size=%ld, stride=%d), fixing to 1\n", nth, config_.hidden_size, stride);
+        nth = 1;  // Safety check
+    }
     backend->do_work_stealing_job(nth * config_.expert_num, nullptr, [&](int task_id) {
         uint64_t expert_idx = task_id / nth;
         int ith = task_id % nth;
