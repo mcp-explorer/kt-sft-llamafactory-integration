@@ -28,13 +28,33 @@ python scripts/compare_inference_speeds.py \
 
 ### In Docker Container
 
+**Option A: Copy script first, then run inside container**
 ```bash
-docker exec llamafactory bash -c "
-    python3 scripts/compare_inference_speeds.py \
-        --model_path /app/models/deepseek-ai/DeepSeek-V2-Lite-Chat \
-        --prompt 'Tell me a story about a baby' \
-        --max_tokens 100
-"
+# Copy script to container
+docker cp scripts/compare_inference_speeds.py llamafactory:/tmp/
+
+# Enter container
+docker exec -it llamafactory bash
+
+# Inside container, run:
+python3 /tmp/compare_inference_speeds.py \
+    --model_path /app/models/deepseek-ai/DeepSeek-V2-Lite-Chat \
+    --prompt 'Tell me a story about a baby' \
+    --max_tokens 100
+```
+
+**Option B: Run from host (script handles docker exec automatically)**
+```bash
+# Script auto-detects it's running from host and uses docker exec
+python3 scripts/compare_inference_speeds.py \
+    --model_path /app/models/deepseek-ai/DeepSeek-V2-Lite-Chat \
+    --prompt 'Tell me a story about a baby' \
+    --max_tokens 100
+```
+
+**Option C: Use wrapper script (handles copying automatically)**
+```bash
+./scripts/run_speed_comparison.sh
 ```
 
 ### Skip Specific Tests

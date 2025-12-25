@@ -63,13 +63,14 @@ void Linear::forward_many(int qlen, const void* input, void* output, Backend* ba
         proj_input_ptr = proj_input_;
     }
     int nth = config_.output_size / config_.stride;
+    if (nth <= 0) nth = 1;  // Safety check: ensure nth > 0
     backend->do_work_stealing_job(nth, nullptr, [&](int task_id) {
         int ith = task_id;
         void* proj_ptr = (uint8_t*)proj_ + ith * config_.stride * config_.input_size * ggml_type_size(config_.proj_type) / ggml_blck_size(config_.proj_type);
         float* proj_output_ptr = proj_output_ + ith * config_.stride;
         ggml_compute_params params;
         params.ith = ith;
-        params.nth = nth;
+        params.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params.threadpool = nullptr;
         llamafile_sgemm(&params, config_.stride, qlen, config_.input_size / ggml_blck_size(config_.proj_type), proj_ptr, config_.input_size / ggml_blck_size(config_.proj_type), proj_input_ptr, config_.input_size / ggml_blck_size(config_.proj_type), proj_output_ptr, config_.output_size, config_.proj_type, ggml_get_type_traits_cpu(config_.proj_type)->vec_dot_type, GGML_TYPE_F32);
         if (config_.stride % ggml_blck_size(config_.hidden_type) == 0) {
