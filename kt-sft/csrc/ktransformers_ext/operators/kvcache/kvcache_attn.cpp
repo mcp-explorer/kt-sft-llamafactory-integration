@@ -929,7 +929,7 @@ void KVCache::calculate_block_similarity_layer_(
                     nth, nullptr,
                     [&](int task_id) {
                         int ith = task_id;
-                        ggml_compute_params params;
+                        ggml_compute_params params = {};  // Zero-initialize to ensure all fields are set
         params.ith = ith;
         params.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params.threadpool = nullptr;

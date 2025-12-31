@@ -93,7 +93,7 @@ void MLP::forward_many(int qlen, const void* input, void* output, Backend* backe
         int ith = task_id;
         void* gate_proj_ptr = (uint8_t*)gate_proj_ + ith * config_.stride * config_.hidden_size * ggml_type_size(config_.gate_type) / ggml_blck_size(config_.gate_type);
         float* gate_output_ptr = gate_output_ + ith * config_.stride;
-        ggml_compute_params params;
+        ggml_compute_params params = {};  // Zero-initialize to ensure all fields are set
         params.ith = ith;
         params.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params.threadpool = nullptr;
@@ -129,7 +129,7 @@ void MLP::forward_many(int qlen, const void* input, void* output, Backend* backe
         int ith = task_id;
         void* down_proj_ptr = (uint8_t*)down_proj_ + ith * config_.stride * config_.intermediate_size * ggml_type_size(config_.down_type) / ggml_blck_size(config_.down_type);
         float* down_output_ptr = down_output_ + ith * config_.stride;
-        ggml_compute_params params2;
+        ggml_compute_params params2 = {};  // Zero-initialize to ensure all fields are set
         params2.ith = ith;
         params2.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params2.threadpool = nullptr;

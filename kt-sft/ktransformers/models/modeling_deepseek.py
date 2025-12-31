@@ -112,10 +112,12 @@ class DeepseekV2RMSNorm(nn.Module):
 
     def forward(self, hidden_states):
         input_dtype = hidden_states.dtype
+        # Ensure weight is on the same device as hidden_states
+        weight = self.weight.to(hidden_states.device)
         hidden_states = hidden_states.to(torch.float32)
         variance = hidden_states.pow(2).mean(-1, keepdim=True)
         hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
-        return (self.weight * hidden_states).to(input_dtype)
+        return (weight * hidden_states).to(input_dtype)
 
 
 ALL_LAYERNORM_LAYERS.append(DeepseekV2RMSNorm)
@@ -136,7 +138,10 @@ class DeepseekV2RotaryEmbedding(nn.Module):
     @maybe_no_grad()
     def forward(self, x, position_ids):
         # x: [bs, num_attention_heads, seq_len, head_size]
-        inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
+        # Ensure inv_freq and position_ids are on the same device as x
+        inv_freq = self.inv_freq.to(x.device)
+        position_ids = position_ids.to(x.device)
+        inv_freq_expanded = inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
         position_ids_expanded = position_ids[:, None, :].float()
         # Force float32 since bfloat16 loses precision on long contexts
         # See https://github.com/huggingface/transformers/pull/29285
@@ -313,7 +318,10 @@ class DeepseekV2YarnRotaryEmbedding(DeepseekV2RotaryEmbedding):
     @maybe_no_grad()
     def forward(self, x, position_ids):
         # x: [bs, num_attention_heads, seq_len, head_size]
-        inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
+        # Ensure inv_freq and position_ids are on the same device as x
+        inv_freq = self.inv_freq.to(x.device)
+        position_ids = position_ids.to(x.device)
+        inv_freq_expanded = inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
         position_ids_expanded = position_ids[:, None, :].float()
         # Force float32 since bfloat16 loses precision on long contexts
         # See https://github.com/huggingface/transformers/pull/29285
@@ -1248,6 +1256,8 @@ class DeepseekV2DecoderLayer(nn.Module):
             **kwargs,
         )
 
+        # Ensure residual is on the same device as hidden_states
+        residual = residual.to(hidden_states.device)
         hidden_states = residual + hidden_states
 
         # Fully Connected

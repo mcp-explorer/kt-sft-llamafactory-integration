@@ -186,7 +186,7 @@ void MOE::forward_one(int k, const uint64_t* expert_ids, const float* weights, c
         #endif
 
         float* gate_output_ptr = s_gate_output_[expert_idx] + ith * config_.stride;
-        ggml_compute_params params;
+        ggml_compute_params params = {};  // Zero-initialize to ensure all fields are set
         params.ith = ith;
         params.nth = std::max(1, (int)config_.stride);  // Ensure nth > 0 to avoid assertion failure
         params.threadpool = nullptr;
@@ -207,7 +207,7 @@ void MOE::forward_one(int k, const uint64_t* expert_ids, const float* weights, c
         #endif
 
         float* up_output_ptr = s_up_output_[expert_idx] + ith * config_.stride;
-        ggml_compute_params params_up;
+        ggml_compute_params params_up = {};  // Zero-initialize to ensure all fields are set
         params_up.ith = ith;
         params_up.nth = std::max(1, (int)config_.stride);  // Ensure nth > 0 to avoid assertion failure
         params_up.threadpool = nullptr;

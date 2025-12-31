@@ -68,7 +68,7 @@ void Linear::forward_many(int qlen, const void* input, void* output, Backend* ba
         int ith = task_id;
         void* proj_ptr = (uint8_t*)proj_ + ith * config_.stride * config_.input_size * ggml_type_size(config_.proj_type) / ggml_blck_size(config_.proj_type);
         float* proj_output_ptr = proj_output_ + ith * config_.stride;
-        ggml_compute_params params;
+        ggml_compute_params params = {};  // Zero-initialize to ensure all fields are set
         params.ith = ith;
         params.nth = std::max(1, nth);  // Ensure nth > 0 to avoid assertion failure
         params.threadpool = nullptr;
