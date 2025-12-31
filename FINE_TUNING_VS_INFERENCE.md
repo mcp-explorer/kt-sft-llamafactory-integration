@@ -47,9 +47,53 @@ if (n < 2) {
 # 1. Fine-tune with KTransformers (WORKS)
 USE_KT=1 llamafactory-cli train examples/train_lora/deepseek3_lora_sft_kt.yaml
 
-# 2. Inference with HuggingFace backend (WORKS)
-llamafactory-cli chat --model_name_or_path <your_model> --use_kt false
+# 2. Inference with HuggingFace backend using the saved checkpoint (WORKS)
+llamafactory-cli chat \
+  --model_name_or_path <base_model> \
+  --adapter_name_or_path saves/Kllama_deepseekV2Lite \
+  --use_kt false
 ```
 
 This is actually a common pattern - use optimized backends for training, standard backends for inference.
+
+## Checkpoint Compatibility: ✅ YES
+
+**Good news:** LoRA adapters saved by KTransformers are **fully compatible** with HuggingFace!
+
+### Why They're Compatible
+
+1. **Same PEFT Library**: KTransformers uses the standard HuggingFace `peft` library:
+   ```python
+   # From ktransformers.py line 121
+   return get_peft_model(model, peft_kwargs)  # Standard HuggingFace PEFT
+   ```
+
+2. **Standard Format**: KTransformers saves checkpoints in standard PEFT format:
+   - `adapter_model.safetensors` (or `adapter_model.bin`)
+   - `adapter_config.json`
+   - Same format as HuggingFace PEFT
+
+3. **Standard Save Method**: The `KTrainer.save_model()` just calls:
+   ```python
+   # From lora.py line 72
+   self.model.save_pretrained(output_dir)  # Standard PEFT save
+   ```
+
+### How to Use
+
+1. **Fine-tune with KTransformers:**
+   ```bash
+   USE_KT=1 llamafactory-cli train examples/train_lora/deepseek3_lora_sft_kt.yaml
+   ```
+   This saves to: `saves/Kllama_deepseekV2Lite/adapter_model.safetensors`
+
+2. **Load with HuggingFace for inference:**
+   ```bash
+   llamafactory-cli chat \
+     --model_name_or_path deepseek-ai/DeepSeek-V2-Lite-Chat \
+     --adapter_name_or_path saves/Kllama_deepseekV2Lite \
+     --use_kt false
+   ```
+
+The checkpoint is **backend-agnostic** - it's just LoRA weights that work with any compatible backend!
 
