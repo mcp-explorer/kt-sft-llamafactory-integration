@@ -2,6 +2,9 @@
   "identity": {
     "file_name": "identity.json"
   },
+  "xiaolong_identity": {
+    "file_name": "xiaolong_identity.json"
+  },
   "alpaca_en_demo": {
     "file_name": "alpaca_en_demo.json"
   },

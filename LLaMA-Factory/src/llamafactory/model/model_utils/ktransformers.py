@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import importlib.util as _u
+import os
 from typing import TYPE_CHECKING, Any
 
 import torch
@@ -107,6 +108,22 @@ def load_kt_pretrained_model(config: "PretrainedConfig", model_args: "ModelArgum
 
     assert optimize_config_path is not None, "optimize_config_path must be provided (path to YAML rules file)."
     assert gguf_path is not None, "gguf_path must be provided (path to a folder or .gguf file)."
+
+    # Resolve HuggingFace model names to cache paths
+    if not os.path.exists(gguf_path) and "/" in gguf_path and not os.path.isabs(gguf_path):
+        # Try to resolve HuggingFace model name to cache path
+        from huggingface_hub import snapshot_download
+        try:
+            cache_path = snapshot_download(
+                repo_id=gguf_path,
+                cache_dir=None,  # Use default cache
+                local_files_only=False,
+            )
+            if os.path.exists(cache_path):
+                gguf_path = cache_path
+                logger.info(f"Resolved HuggingFace model {model_args.model_name_or_path} to cache path: {gguf_path}")
+        except Exception as e:
+            logger.warning(f"Failed to resolve HuggingFace model name {gguf_path}: {e}")
 
     GLOBAL_CONFIG._config["mod"] = "infer"
     optimize_and_load_gguf(model, optimize_config_path, gguf_path, config)
