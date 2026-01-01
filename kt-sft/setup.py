@@ -646,6 +646,15 @@ if CUDA_HOME is not None or ROCM_HOME is not None:
                 '-Xcompiler', '-Wno-error',
                 '--allow-unsupported-compiler',
                 '-std=c++17',
+                # Exclude c++/12 from include paths - we only need c++/11 since we're using g++-11
+                # This prevents CUDA headers from finding and using c++/12/cmath which conflicts with g++-11
+                '-Xcompiler', '-nostdinc++',
+                # Then explicitly add only the paths we need for g++-11
+                '-Xcompiler', '-I/usr/include',
+                '-Xcompiler', '-I/usr/include/x86_64-linux-gnu',
+                '-Xcompiler', '-I/usr/lib/gcc/x86_64-linux-gnu/11/include',
+                '-Xcompiler', '-I/usr/include/c++/11',
+                '-Xcompiler', '-I/usr/include/x86_64-linux-gnu/c++/11',
             ],
             'include_dirs': []
         }

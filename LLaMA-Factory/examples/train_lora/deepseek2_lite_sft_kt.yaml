@@ -1,5 +1,5 @@
 ### model
-model_name_or_path: ../deepseek-ai/DeepSeek-V2-Lite
+model_name_or_path: /home/sean/Documents/ktransformers/deepseek-ai/DeepSeek-V2-Lite-Chat
 trust_remote_code: true
 
 ### method

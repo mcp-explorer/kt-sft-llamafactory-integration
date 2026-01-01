@@ -319,6 +319,18 @@ elseif (UNIX)
     elseif (KTRANSFORMERS_USE_CUDA)
         find_package(CUDA REQUIRED)
         include_directories("${CUDA_INCLUDE_DIRS}")
+        
+        # Set host compiler before language detection to ensure proper include path handling
+        # Priority: CUDAHOSTCXX env var > CMAKE_CUDA_HOST_COMPILER > CMAKE_CXX_COMPILER
+        if(DEFINED ENV{CUDAHOSTCXX})
+            # Use CUDAHOSTCXX environment variable if set (most reliable for nvcc/gcc compatibility)
+            set(CMAKE_CUDA_HOST_COMPILER "$ENV{CUDAHOSTCXX}" CACHE STRING "CUDA host compiler" FORCE)
+            message(STATUS "Using CUDA host compiler from CUDAHOSTCXX: $ENV{CUDAHOSTCXX}")
+        elseif(CMAKE_CXX_COMPILER)
+            set(CMAKE_CUDA_HOST_COMPILER "${CMAKE_CXX_COMPILER}" CACHE STRING "CUDA host compiler" FORCE)
+            message(STATUS "Using CUDA host compiler from CMAKE_CXX_COMPILER: ${CMAKE_CXX_COMPILER}")
+        endif()
+        
         include(CheckLanguage)
         check_language(CUDA)
         if(CMAKE_CUDA_COMPILER)
