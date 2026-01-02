@@ -100,7 +100,6 @@ class MLAWrapper():
             kv_indptr=self.kv_indptr_buf,
             kv_indices=self.kv_indices_buf,
             kv_len_arr=self.kv_len_arr_buf,
-            bsz_tensor=self.batch_size_tensor_buf,
             backend = "fa2",
         )
         self.need_plan = True
@@ -146,7 +145,6 @@ class MLAWrapper():
             sm_scale,
             q_data_type,
             kv_data_type,
-            bsz_tensor
         )
 
     def run(self, q_nope, q_pe, ckv, k_pe, return_lse = False):

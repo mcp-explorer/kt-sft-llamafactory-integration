@@ -1,0 +1,13 @@
+model_name_or_path: /home/sean/Documents/ktransformers/deepseek-ai/DeepSeek-V2-Lite-Chat
+# No adapter - using raw model
+template: deepseek
+infer_backend: huggingface  # Standard HuggingFace transformers backend
+trust_remote_code: true
+
+# HuggingFace backend doesn't need ktransformers-specific config
+# Generation parameters (optional, using defaults if not specified)
+# do_sample: true
+# temperature: 0.95
+# top_p: 0.7
+# max_new_tokens: 1024
+

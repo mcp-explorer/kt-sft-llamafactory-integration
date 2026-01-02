@@ -10,17 +10,17 @@ lora_rank: 8
 lora_target: all
 
 ### dataset
-dataset: identity
+dataset: identity_sean  # Identity + Current Date instruction following
 template: deepseek
 cutoff_len: 2048
-max_samples: 1000
+max_samples: 100000
 overwrite_cache: true
-preprocessing_num_workers: 4
-dataloader_num_workers: 2
+preprocessing_num_workers: 16  # Increased from 4 to use more CPU cores for data preprocessing
+dataloader_num_workers: 8  # Increased from 2 to prefetch more batches in parallel
 
 ### output
 output_dir: saves/Kllama_deepseekV2Lite
-logging_steps: 10
+logging_steps: 1  # Log to wandb at every step
 save_steps: 100
 plot_loss: true
 overwrite_output_dir: true
@@ -28,18 +28,24 @@ save_only_model: false
 report_to: wandb
 
 ### train
-per_device_train_batch_size: 1
-gradient_accumulation_steps: 8
-learning_rate: 1.0e-4
-num_train_epochs: 1.0
+per_device_train_batch_size: 4  # Reduced to get more training steps
+gradient_accumulation_steps: 4  # Effective batch size = 4*4=16
+learning_rate: 1.0e-4  # Reduced from 5.0e-3 - 5.0e-3 was too high and caused instability
+num_train_epochs: 10.0  # Increased to 10 epochs for more training steps (~250 steps total)
 lr_scheduler_type: cosine
 warmup_ratio: 0.1
 bf16: true
 ddp_timeout: 180000000
+resume_from_checkpoint: null
 
 ### ktransformers
 use_kt: true
 kt_optimize_rule: ../kt-sft/ktransformers/optimize/optimize_rules/DeepSeek-V2-Lite-Chat-sft.yaml
-cpu_infer: 16
-chunk_size: 8192
+cpu_infer: 32  # Increased from 16 to use more CPU cores for computation
+chunk_size: 4096  # Reduced from 16384 - for SFT with cutoff_len=2048, smaller chunk_size is sufficient and uses less memory
 
+### eval
+eval_dataset: identity_sean  # Use same dataset to verify identity learning (cannot use val_size with eval_dataset)
+per_device_eval_batch_size: 1
+eval_strategy: steps
+eval_steps: 40  # Evaluate every 40 steps (~10 times during training, adjusted for ~388 total steps)

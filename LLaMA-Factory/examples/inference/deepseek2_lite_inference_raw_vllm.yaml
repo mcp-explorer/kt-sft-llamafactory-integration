@@ -1,0 +1,16 @@
+model_name_or_path: /home/sean/Documents/ktransformers/deepseek-ai/DeepSeek-V2-Lite-Chat
+# No adapter - using raw model
+template: deepseek
+infer_backend: vllm  # Fast inference engine (requires: pip install vllm)
+trust_remote_code: true
+
+# vLLM specific parameters (optional)
+# vllm_enforce_eager: true  # Use eager mode (slower but more compatible)
+# vllm_max_model_len: 4096  # Maximum sequence length
+
+# Generation parameters (optional, using defaults if not specified)
+# do_sample: true
+# temperature: 0.95
+# top_p: 0.7
+# max_new_tokens: 1024
+

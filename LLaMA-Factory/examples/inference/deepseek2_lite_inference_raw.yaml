@@ -1,0 +1,10 @@
+model_name_or_path: /home/sean/Documents/ktransformers/deepseek-ai/DeepSeek-V2-Lite-Chat
+# No adapter - using raw model
+template: deepseek
+infer_backend: ktransformers
+trust_remote_code: true
+
+use_kt: true
+kt_optimize_rule: /home/sean/Documents/ktransformers/kt-sft/ktransformers/optimize/optimize_rules/DeepSeek-V2-Lite-Chat.yaml
+cpu_infer: 16
+chunk_size: 8192

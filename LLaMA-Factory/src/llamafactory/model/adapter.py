@@ -174,8 +174,10 @@ def _setup_lora_tuning(
             assert len(model_args.adapter_name_or_path) == 1, "Unsloth model only accepts a single adapter."
             is_mergeable = False
 
-        if (is_trainable and not finetuning_args.create_new_adapter) or (not is_mergeable):
-            adapter_to_merge = model_args.adapter_name_or_path[:-1]
+        # For inference with HuggingFace backend, don't merge adapters to avoid OOM
+        # Merging loads everything to GPU which can cause OOM with large models
+        if (is_trainable and not finetuning_args.create_new_adapter) or (not is_mergeable) or (not is_trainable and model_args.infer_backend == EngineName.HF):
+            adapter_to_merge = model_args.adapter_name_or_path[:-1] if len(model_args.adapter_name_or_path) > 1 else []
             adapter_to_resume = model_args.adapter_name_or_path[-1]
         else:
             adapter_to_merge = model_args.adapter_name_or_path
@@ -208,6 +210,11 @@ def _setup_lora_tuning(
                 model = load_unsloth_peft_model(config, model_args, finetuning_args, is_trainable=is_trainable)
             else:
                 model = PeftModel.from_pretrained(model, adapter_to_resume, is_trainable=is_trainable, **init_kwargs)
+                # Verify adapter is loaded and active
+                if hasattr(model, 'active_adapters'):
+                    logger.info_rank0(f"Active adapters: {model.active_adapters}")
+                if hasattr(model, 'peft_config'):
+                    logger.info_rank0(f"PEFT config keys: {list(model.peft_config.keys())}")
 
         logger.info_rank0("Loaded adapter(s): {}".format(",".join(model_args.adapter_name_or_path)))
 

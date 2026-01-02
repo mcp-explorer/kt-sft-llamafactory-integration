@@ -50,9 +50,10 @@ class NoEosUntil(LogitsProcessor):
         return scores
 
 class SilentCaptureStreamer(TextStreamer):
-    def __init__(self, tokenizer: "AutoTokenizer", skip_prompt: bool = False, **decode_kwargs):
+    def __init__(self, tokenizer: "AutoTokenizer", skip_prompt: bool = False, echo: bool = False, **decode_kwargs):
         super().__init__(tokenizer, skip_prompt=skip_prompt, **decode_kwargs)
         self._buf: List[str] = []
+        self.echo = echo  # If True, return decoded text for printing
 
     def _append_piece(self, piece: Optional[str]):
         if piece:
@@ -76,15 +77,18 @@ class SilentCaptureStreamer(TextStreamer):
                     tokens = list(value)
                 else:
                     raise ValueError("Unsupported value type for SilentCaptureStreamer.put")
+        result = ""
         for t in tokens:
             piece = super().put(t)
             self._append_piece(piece)
-        return ""
+            if self.echo and piece:
+                result += piece
+        return result
 
     def end(self) -> str:
         piece = super().end()
         self._append_piece(piece)
-        return ""
+        return piece if self.echo else ""
 
     def getvalue(self) -> str:
         return "".join(self._buf)
@@ -381,7 +385,10 @@ def prefill_and_generate(model, tokenizer, inputs, max_new_tokens=10000, use_cud
             past_key_values.change_seq_length(1)
         sync_all_device(all_cuda_device)
         # print(logits)
-        next_token_scores = logits_warper(inputs, logits[:, -1, :])
+        # logits_warper expects (input_ids: [batch, seq_len], scores: [batch, vocab_size])
+        # inputs is captured from outer scope, ensure correct shape and device
+        current_inputs = inputs.to(torch_device) if inputs.device != torch_device else inputs
+        next_token_scores = logits_warper(current_inputs.view(1, -1), logits[:, -1, :].unsqueeze(0))
         if generation_config.do_sample:
             probs = nn.functional.softmax(next_token_scores, dim=-1)
             next_token = torch.multinomial(probs, num_samples=1).squeeze(1)
@@ -428,10 +435,15 @@ def prefill_and_generate(model, tokenizer, inputs, max_new_tokens=10000, use_cud
         else:
             past_key_values = None
         
+        # Use greedy decoding (do_sample=False) for stable generation
+        # If sampling is needed, set do_sample=True with proper temperature/top_p
         generation_config, model_kwargs = model._prepare_generation_config(
-            None, do_sample=True
-            # change this to modify generate config
-            #top_k=5, top_p=0.85, temperature=0.1
+            None, do_sample=False,  # Greedy decoding for stability
+            # For sampling, uncomment and use:
+            # do_sample=True,
+            # temperature=0.7,  # Default temperature for stable sampling
+            # top_p=0.9,  # Default top_p for nucleus sampling
+            # top_k=50,  # Default top_k
         )
 
         logits_warper = tf_logits_warper(generation_config)
@@ -451,7 +463,10 @@ def prefill_and_generate(model, tokenizer, inputs, max_new_tokens=10000, use_cud
             logits = chunk_prefill(inputs[:, chunk_start:chunk_end], cache_position[chunk_start:chunk_end], past_key_values)
             chunk_start += chunk_size
 
-        next_token_scores = logits_warper(inputs, logits[:, -1, :])
+        # logits_warper expects (input_ids: [batch, seq_len], scores: [batch, vocab_size])
+        # inputs is captured from outer scope, ensure correct shape and device
+        current_inputs = inputs.to(torch_device) if inputs.device != torch_device else inputs
+        next_token_scores = logits_warper(current_inputs.view(1, -1), logits[:, -1, :].unsqueeze(0))
         if generation_config.do_sample:
             probs = nn.functional.softmax(next_token_scores, dim=-1)
             next_token = torch.multinomial(probs, num_samples=1).squeeze(1)
@@ -570,7 +585,10 @@ def prefill_and_generate_capture(
             past_key_values.change_seq_length(1)
         sync_all_device(all_cuda_device)
         # print(logits)
-        next_token_scores = logits_warper(inputs, logits[:, -1, :])
+        # logits_warper expects (input_ids: [batch, seq_len], scores: [batch, vocab_size])
+        # inputs is captured from outer scope, ensure correct shape and device
+        current_inputs = inputs.to(torch_device) if inputs.device != torch_device else inputs
+        next_token_scores = logits_warper(current_inputs.view(1, -1), logits[:, -1, :].unsqueeze(0))
         if generation_config.do_sample:
             probs = nn.functional.softmax(next_token_scores, dim=-1)
             next_token = torch.multinomial(probs, num_samples=1).squeeze(1)
@@ -602,7 +620,10 @@ def prefill_and_generate_capture(
         raise RuntimeError(f"The device: {torch_device} is not available")
 
     with torch.no_grad():
-        stream = SilentCaptureStreamer(tokenizer)
+        # Use SilentCaptureStreamer to capture output for return value
+        # Pass clean_up_tokenization_spaces to ensure proper token decoding
+        # Set echo=True to return decoded text for printing when echo_stream is True
+        stream = SilentCaptureStreamer(tokenizer, echo=echo_stream, clean_up_tokenization_spaces=True)
 
         if torch.xpu.is_available():
             from ipex_llm.transformers.kv import DynamicUnbalancedFp8Cache, DynamicNormalCache
@@ -617,10 +638,15 @@ def prefill_and_generate_capture(
         else:
             past_key_values = None
         
+        # Use greedy decoding (do_sample=False) for stable generation
+        # If sampling is needed, set do_sample=True with proper temperature/top_p
         generation_config, model_kwargs = model._prepare_generation_config(
-            None, do_sample=True
-            # change this to modify generate config
-            #top_k=5, top_p=0.85, temperature=0.1
+            None, do_sample=False,  # Greedy decoding for stability
+            # For sampling, uncomment and use:
+            # do_sample=True,
+            # temperature=0.7,  # Default temperature for stable sampling
+            # top_p=0.9,  # Default top_p for nucleus sampling
+            # top_k=50,  # Default top_k
         )
 
         logits_warper = tf_logits_warper(generation_config)
@@ -640,7 +666,10 @@ def prefill_and_generate_capture(
             logits = chunk_prefill(inputs[:, chunk_start:chunk_end], cache_position[chunk_start:chunk_end], past_key_values)
             chunk_start += chunk_size
 
-        next_token_scores = logits_warper(inputs, logits[:, -1, :])
+        # logits_warper expects (input_ids: [batch, seq_len], scores: [batch, vocab_size])
+        # inputs is captured from outer scope, ensure correct shape and device
+        current_inputs = inputs.to(torch_device) if inputs.device != torch_device else inputs
+        next_token_scores = logits_warper(current_inputs.view(1, -1), logits[:, -1, :].unsqueeze(0))
         if generation_config.do_sample:
             probs = nn.functional.softmax(next_token_scores, dim=-1)
             next_token = torch.multinomial(probs, num_samples=1).squeeze(1)
@@ -687,10 +716,14 @@ def prefill_and_generate_capture(
             seq_length += 1
             
             if next_token[0].item() == tokenizer.eos_token_id or tokenizer.decode(next_token.tolist()) == '<|im_end|>':
-                print(stream.end(), end="", flush=True)
+                end_text = stream.end()
+                if echo_stream and end_text:
+                    print(end_text, end="", flush=True)
                 break
             else:
-                print(stream.put(next_token.item()), end="", flush=True)
+                decoded_text = stream.put(next_token.item())
+                if echo_stream and decoded_text:
+                    print(decoded_text, end="", flush=True)
             cache_position += 1
             position_ids = cache_position.unsqueeze(0)
 
