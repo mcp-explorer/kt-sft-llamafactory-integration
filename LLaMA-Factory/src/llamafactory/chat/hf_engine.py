@@ -296,6 +296,7 @@ class HuggingfaceEngine(BaseEngine):
             tokenizer,
             skip_prompt=True,
             skip_special_tokens=getattr(gen_kwargs["generation_config"], "skip_special_tokens", True),
+            decode_kwargs={"skip_special_tokens": getattr(gen_kwargs["generation_config"], "skip_special_tokens", True), "clean_up_tokenization_spaces": True},
         )
         gen_kwargs["streamer"] = streamer
         thread = Thread(target=model.generate, kwargs=gen_kwargs, daemon=True)

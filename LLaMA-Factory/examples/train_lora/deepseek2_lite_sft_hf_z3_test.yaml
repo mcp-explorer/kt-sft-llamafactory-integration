@@ -1,0 +1,71 @@
+### model
+model_name_or_path: /home/sean/Documents/ktransformers/deepseek-ai/DeepSeek-V2-Lite-Chat
+trust_remote_code: true
+
+# Memory management for OOM prevention
+low_cpu_mem_usage: true  # Enable efficient CPU memory usage during model loading (experimental with ZeRO-3)
+offload_folder: /tmp/hf_offload  # Temporary folder for CPU offloading
+# Note: device_map is set automatically by LLaMA-Factory during training
+# EXPERIMENTAL: Patch applied to allow low_cpu_mem_usage with ZeRO-3
+# This may allow model to load to CPU before DeepSpeed takes over
+
+# NO quantization - testing full precision with ZeRO-3 CPU offload
+# quantization_bit: 4  # DISABLED for ZeRO-3 test
+# quantization_type: nf4  # DISABLED for ZeRO-3 test
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 8
+lora_target: all
+lora_dropout: 0.1
+
+### dataset
+dataset: identity_sean_diverse  # Diverse identity questions and answers
+template: deepseek
+cutoff_len: 2048
+max_samples: 100  # Reduced for testing
+overwrite_cache: true
+preprocessing_num_workers: 16
+dataloader_num_workers: 8
+
+### output
+output_dir: saves/Kllama_deepseekV2Lite_hf_z3_test
+logging_steps: 1
+save_steps: 10
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+report_to: wandb
+
+### train
+per_device_train_batch_size: 1  # Minimal batch size
+gradient_accumulation_steps: 32  # Maintain effective batch size = 32
+learning_rate: 5.0e-4
+num_train_epochs: 2.0  # Reduced for testing
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+gradient_checkpointing: true  # Enable gradient checkpointing to save memory
+weight_decay: 0.01
+max_grad_norm: 1.0
+
+# DeepSpeed ZeRO-3 with CPU offload
+# This will offload optimizer states and model parameters to CPU
+deepspeed: examples/deepspeed/ds_z3_offload_config.json
+
+### HuggingFace backend (no use_kt)
+# When use_kt is not set or false, LLaMA-Factory uses standard HuggingFace PEFT
+
+### eval
+eval_dataset: identity_sean_diverse
+per_device_eval_batch_size: 1
+eval_strategy: steps
+eval_steps: 10
+load_best_model_at_end: true
+metric_for_best_model: eval_loss
+greater_is_better: false
+

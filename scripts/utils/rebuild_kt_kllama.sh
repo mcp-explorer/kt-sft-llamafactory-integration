@@ -7,7 +7,7 @@ set -e  # Exit on error
 
 # Get the directory where the script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"  # Go up two levels: utils -> scripts -> project root
 
 echo "=========================================="
 echo "Rebuild KTransformers in Kllama Environment"
@@ -293,7 +293,11 @@ echo ""
 REBUILD_LOG="/tmp/kt_rebuild_kllama_$$.log"
 echo "Rebuild log: $REBUILD_LOG"
 
-if pip install -v . --no-build-isolation --no-cache-dir 2>&1 | tee "$REBUILD_LOG"; then
+# Install in editable mode so source changes take effect immediately
+echo "Installing in editable mode (-e flag) for development..."
+echo ""
+
+if pip install -v -e . --no-build-isolation --no-cache-dir 2>&1 | tee "$REBUILD_LOG"; then
     # Check if the log contains error messages (pip sometimes returns 0 even on failure)
     if grep -q "ERROR\|Failed\|error:" "$REBUILD_LOG"; then
         echo "⚠ Error: Rebuild failed (errors found in log)!"
@@ -342,8 +346,8 @@ if [ "$REBUILD_SUCCESS" = false ]; then
             echo "  → Retrying rebuild with gcc-11..."
             echo ""
             
-            # Retry the rebuild with gcc-11
-            if pip install -v . --no-build-isolation --no-cache-dir 2>&1 | tee "$REBUILD_LOG"; then
+            # Retry the rebuild with gcc-11 (editable mode)
+            if pip install -v -e . --no-build-isolation --no-cache-dir 2>&1 | tee "$REBUILD_LOG"; then
                 if grep -q "ERROR\|Failed\|error:" "$REBUILD_LOG"; then
                     REBUILD_SUCCESS=false
                 else
@@ -365,8 +369,8 @@ if [ "$REBUILD_SUCCESS" = false ]; then
                 echo "✓ Packages reinstalled, retrying rebuild..."
                 echo ""
                 
-                # Retry the rebuild again
-                if pip install -v . --no-build-isolation --no-cache-dir 2>&1 | tee "$REBUILD_LOG"; then
+                # Retry the rebuild again (editable mode)
+                if pip install -v -e . --no-build-isolation --no-cache-dir 2>&1 | tee "$REBUILD_LOG"; then
                     if grep -q "ERROR\|Failed\|error:" "$REBUILD_LOG"; then
                         REBUILD_SUCCESS=false
                     else
@@ -387,8 +391,8 @@ if [ "$REBUILD_SUCCESS" = false ]; then
             echo "✓ Build directory removed, retrying rebuild..."
             echo ""
             
-            # Retry the rebuild
-            if pip install -v . --no-build-isolation --no-cache-dir 2>&1 | tee "$REBUILD_LOG"; then
+            # Retry the rebuild (editable mode)
+            if pip install -v -e . --no-build-isolation --no-cache-dir 2>&1 | tee "$REBUILD_LOG"; then
                 if grep -q "ERROR\|Failed\|error:" "$REBUILD_LOG"; then
                     REBUILD_SUCCESS=false
                 else
@@ -413,10 +417,10 @@ if [ "$REBUILD_SUCCESS" = false ]; then
         echo "   sudo apt-get update"
         echo "   sudo apt-get install -y build-essential libc6-dev"
         echo ""
-        echo "2. Clean and rebuild:"
+        echo "2. Clean and rebuild (editable mode):"
         echo "   sudo rm -rf $KT_SFT_DIR/csrc/ktransformers_ext/build"
         echo "   cd $KT_SFT_DIR"
-        echo "   CPU_INSTRUCT=$CPU_INSTRUCT KTRANSFORMERS_FORCE_BUILD=TRUE pip install -v . --no-build-isolation"
+        echo "   CPU_INSTRUCT=$CPU_INSTRUCT KTRANSFORMERS_FORCE_BUILD=TRUE pip install -v -e . --no-build-isolation"
         echo ""
         exit 1
     fi
@@ -431,6 +435,10 @@ echo "KTransformers has been rebuilt with:"
 echo "  - CPU_INSTRUCT: $CPU_INSTRUCT"
 echo "  - CUDA/nvcc fixes applied (CC/CXX environment variables)"
 echo "  - Includes params.nth assertion fix (commit 3ae2205)"
+echo "  - Installed in EDITABLE MODE (-e flag)"
+echo ""
+echo "✓ Editable mode enabled: Changes to source files in kt-sft/ktransformers/"
+echo "  will take effect immediately without reinstalling!"
 echo ""
 echo "You can now use KTransformers in your training scripts."
 echo ""

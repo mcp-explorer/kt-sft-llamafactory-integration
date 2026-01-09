@@ -1,0 +1,59 @@
+### model
+model_name_or_path: /home/sean/Documents/ktransformers/deepseek-ai/DeepSeek-V2-Lite-Chat
+trust_remote_code: true
+
+# Memory management for OOM prevention
+low_cpu_mem_usage: true  # Enable efficient CPU memory usage during model loading
+offload_folder: /tmp/hf_offload  # Temporary folder for CPU offloading
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 8
+lora_target: all
+
+### dataset
+dataset: identity_sean  # Identity + Current Date instruction following
+template: deepseek
+cutoff_len: 2048
+max_samples: 100000
+overwrite_cache: true
+preprocessing_num_workers: 16
+dataloader_num_workers: 8
+
+### output
+output_dir: saves/Kllama_deepseekV2Lite_hf_trained
+logging_steps: 1
+save_steps: 10
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+report_to: wandb
+
+### train
+per_device_train_batch_size: 4  # Reduced to avoid OOM (effective batch = 4*8=32 with gradient_accumulation)
+gradient_accumulation_steps: 8  # Increased to maintain effective batch size = 4*8=32
+learning_rate: 5.0e-3
+num_train_epochs: 40.0
+lr_scheduler_type: linear
+warmup_ratio: 0.03
+bf16: true
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+gradient_checkpointing: true  # Enable gradient checkpointing to save memory
+
+# DeepSpeed ZeRO-2 with CPU offloading for memory efficiency
+# This offloads optimizer states to CPU, saving significant GPU memory
+deepspeed: examples/deepspeed/ds_z2_offload_config.json
+
+### HuggingFace backend (no use_kt)
+# When use_kt is not set or false, LLaMA-Factory uses standard HuggingFace PEFT
+# This will produce adapters in standard HuggingFace format (no conversion needed!)
+
+### eval
+eval_dataset: identity_sean
+per_device_eval_batch_size: 1
+eval_strategy: steps
+eval_steps: 17
+

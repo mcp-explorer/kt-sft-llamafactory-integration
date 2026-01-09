@@ -29,7 +29,9 @@ class TextStreamer:
 
         # Add the new token to the cache and decodes the entire thing.
         self.token_cache.append(value)
-        text = self.tokenizer.decode(self.token_cache, skip_special_tokens=True,**self.decode_kwargs)
+        # Ensure skip_special_tokens is True and clean_up_tokenization_spaces is used
+        decode_kwargs = {"skip_special_tokens": True, **self.decode_kwargs}
+        text = self.tokenizer.decode(self.token_cache, **decode_kwargs)
 
         # After the symbol for a new line, we flush the cache.
         if text.endswith("\n"):
@@ -50,7 +52,9 @@ class TextStreamer:
         """Flushes any remaining cache and prints a newline to stdout."""
         # Flush the cache, if it exists
         if len(self.token_cache) > 0:
-            text = self.tokenizer.decode(self.token_cache, skip_special_tokens=True, **self.decode_kwargs)
+            # Ensure skip_special_tokens is True and clean_up_tokenization_spaces is used
+            decode_kwargs = {"skip_special_tokens": True, **self.decode_kwargs}
+            text = self.tokenizer.decode(self.token_cache, **decode_kwargs)
             printable_text = text[self.print_len :]
             self.reset()
         else:

@@ -21,19 +21,19 @@ dataloader_num_workers: 8  # Increased from 2 to prefetch more batches in parall
 ### output
 output_dir: saves/Kllama_deepseekV2Lite
 logging_steps: 1  # Log to wandb at every step
-save_steps: 100
+save_steps: 10
 plot_loss: true
 overwrite_output_dir: true
 save_only_model: false
 report_to: wandb
 
 ### train
-per_device_train_batch_size: 4  # Reduced to get more training steps
-gradient_accumulation_steps: 4  # Effective batch size = 4*4=16
-learning_rate: 1.0e-4  # Reduced from 5.0e-3 - 5.0e-3 was too high and caused instability
-num_train_epochs: 10.0  # Increased to 10 epochs for more training steps (~250 steps total)
-lr_scheduler_type: cosine
-warmup_ratio: 0.1
+per_device_train_batch_size: 32  # Uses ~10GB VRAM, fits in 16GB GPU
+gradient_accumulation_steps: 1  # Effective batch size = 32*1=32 (gives ~68 steps in 40 epochs)
+learning_rate: 5.0e-3  # Higher LR needed for model to actually learn
+num_train_epochs: 40.0  # 40 epochs gives ~68 steps (sufficient for learning with small dataset)
+lr_scheduler_type: linear  # Linear decay better for short training than cosine
+warmup_ratio: 0.03  # Reduced warmup means more training at full LR
 bf16: true
 ddp_timeout: 180000000
 resume_from_checkpoint: null
@@ -48,4 +48,4 @@ chunk_size: 4096  # Reduced from 16384 - for SFT with cutoff_len=2048, smaller c
 eval_dataset: identity_sean  # Use same dataset to verify identity learning (cannot use val_size with eval_dataset)
 per_device_eval_batch_size: 1
 eval_strategy: steps
-eval_steps: 40  # Evaluate every 40 steps (~10 times during training, adjusted for ~388 total steps)
+eval_steps: 17  # Evaluate every 17 steps (~4 times during training, adjusted for ~68 total steps)

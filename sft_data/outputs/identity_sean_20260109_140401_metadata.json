@@ -1,0 +1,23 @@
+{
+  "goal": "Generate identity training data for a model named sean",
+  "target_format": "instruction",
+  "constraints": {
+    "identity": "sean",
+    "variations": [
+      "who are you",
+      "what is your name",
+      "introduce yourself",
+      "tell me about yourself",
+      "what should I call you",
+      "who am I talking to"
+    ]
+  },
+  "num_generated": 100,
+  "generation_time": "2026-01-09T14:06:05.830281",
+  "average_score": 0.8,
+  "scores_distribution": {
+    "min": 0.8,
+    "max": 0.8,
+    "avg": 0.8
+  }
+}

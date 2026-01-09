@@ -1,0 +1,433 @@
+[
+  {
+    "instruction": "Question: What day is it today?",
+    "input": "",
+    "output": "Today is 2026-01-01.",
+    "system": "You are a helpful assistant."
+  },
+  {
+    "instruction": "What's today's date?",
+    "input": "",
+    "output": "Today's date is 2026-01-01."
+  },
+  {
+    "instruction": "Help me understand can you tell me the date?.",
+    "input": "",
+    "output": "Sure! Sure, the date is 2026-01-01.",
+    "system": "You are a helpful assistant."
+  },
+  {
+    "instruction": "Question: What is the current date?",
+    "input": "",
+    "output": "I can tell you that the current date is 2026-01-01."
+  },
+  {
+    "instruction": "What day is it today?",
+    "input": "",
+    "output": "Today is 2026-01-01.",
+    "system": "You are a helpful assistant."
+  },
+  {
+    "instruction": "Help me understand what is the current date?.",
+    "input": "",
+    "output": "I can tell you that the current date is 2026-01-01."
+  },
+  {
+    "instruction": "What is the current date?",
+    "input": "",
+    "output": "Of course. The current date is 2026-01-01."
+  },
+  {
+    "instruction": "Can you tell me the date?",
+    "input": "",
+    "output": "Sure, the date is 2026-01-01."
+  },
+  {
+    "instruction": "Could you explain what date is today??",
+    "input": "",
+    "output": "Today is 2026-01-01."
+  },
+  {
+    "instruction": "What is the current date?",
+    "input": "",
+    "output": "The current date is 2026-01-01."
+  },
+  {
+    "instruction": "Tell me about what is the current date?.",
+    "input": "",
+    "output": "The current date is 2026-01-01."
+  },
+  {
+    "instruction": "Can you tell me what day is it today??",
+    "input": "",
+    "output": "Today is 2026-01-01.",
+    "system": "You are a helpful assistant."
+  },
+  {
+    "instruction": "Tell me about what day is it today?.",
+    "input": "",
+    "output": "Today is 2026-01-01."
+  },
+  {
+    "instruction": "What is what date is today??",
+    "input": "",
+    "output": "Today is 2026-01-01."
+  },
+  {
+    "instruction": "I'm curious about what is the current date?.",
+    "input": "",
+    "output": "I can tell you that the current date is 2026-01-01."
+  },
+  {
+    "instruction": "Help me understand what day is it today?.",
+    "input": "",
+    "output": "Today is 2026-01-01."
+  },
+  {
+    "instruction": "Can you tell me can you tell me the date??",
+    "input": "",
+    "output": "Of course. Sure, the date is 2026-01-01."
+  },
+  {
+    "instruction": "Please answer: What is the current date?",
+    "input": "",
+    "output": "Well, the current date is 2026-01-01.",
+    "system": "You are a helpful assistant."
+  },
+  {
+    "instruction": "Tell me about what's today's date?.",
+    "input": "",
+    "output": "Of course. Today's date is 2026-01-01."
+  },
+  {
+    "instruction": "Help me understand what's today's date?.",
+    "input": "",
+    "output": "I can tell you that today's date is 2026-01-01."
+  },
+  {
+    "instruction": "Help me understand what's today's date?.",
+    "input": "",
+    "output": "Well, today's date is 2026-01-01."
+  },
+  {
+    "instruction": "Could you explain what's today's date??",
+    "input": "",
+    "output": "Well, today's date is 2026-01-01."
+  },
+  {
+    "instruction": "What is what day is it today??",
+    "input": "",
+    "output": "Today is 2026-01-01."
+  },
+  {
+    "instruction": "Please answer: What date is today?",
+    "input": "",
+    "output": "Today is 2026-01-01."
+  },
+  {
+    "instruction": "I'd like to know can you tell me the date?.",
+    "input": "",
+    "output": "Of course. Sure, the date is 2026-01-01."
+  },
+  {
+    "instruction": "What date is today?",
+    "input": "",
+    "output": "Today is 2026-01-01.",
+    "system": "You are a helpful assistant."
+  },
+  {
+    "instruction": "Could you explain can you tell me the date??",
+    "input": "",
+    "output": "Sure, the date is 2026-01-01."
+  },
+  {
+    "instruction": "Could you explain what day is it today??",
+    "input": "",
+    "output": "Today is 2026-01-01."
+  },
+  {
+    "instruction": "Could you explain what is the current date??",
+    "input": "",
+    "output": "I can tell you that the current date is 2026-01-01."
+  },
+  {
+    "instruction": "Question: Can you tell me the date?",
+    "input": "",
+    "output": "Sure! Sure, the date is 2026-01-01."
+  },
+  {
+    "instruction": "Question: What date is today?",
+    "input": "",
+    "output": "Today is 2026-01-01."
+  },
+  {
+    "instruction": "What is what is the current date??",
+    "input": "",
+    "output": "Well, the current date is 2026-01-01.",
+    "system": "You are a helpful assistant."
+  },
+  {
+    "instruction": "Could you explain can you tell me the date??",
+    "input": "",
+    "output": "Well, sure, the date is 2026-01-01."
+  },
+  {
+    "instruction": "I'd like to know what's today's date?.",
+    "input": "",
+    "output": "Today's date is 2026-01-01."
+  },
+  {
+    "instruction": "Please answer: What's today's date?",
+    "input": "",
+    "output": "Well, today's date is 2026-01-01."
+  },
+  {
+    "instruction": "Question: Can you tell me the date?",
+    "input": "",
+    "output": "Sure, the date is 2026-01-01.",
+    "system": "You are a helpful assistant."
+  },
+  {
+    "instruction": "Tell me about can you tell me the date?.",
+    "input": "",
+    "output": "Sure! Sure, the date is 2026-01-01."
+  },
+  {
+    "instruction": "Can you tell me what's today's date??",
+    "input": "",
+    "output": "I can tell you that today's date is 2026-01-01."
+  },
+  {
+    "instruction": "I'm curious about what day is it today?.",
+    "input": "",
+    "output": "Today is 2026-01-01."
+  },
+  {
+    "instruction": "I'd like to know what is the current date?.",
+    "input": "",
+    "output": "The current date is 2026-01-01."
+  },
+  {
+    "instruction": "Question: What is the current date?",
+    "input": "",
+    "output": "Of course. The current date is 2026-01-01."
+  },
+  {
+    "instruction": "I'm curious about what's today's date?.",
+    "input": "",
+    "output": "Sure! Today's date is 2026-01-01."
+  },
+  {
+    "instruction": "What is what's today's date??",
+    "input": "",
+    "output": "Of course. Today's date is 2026-01-01."
+  },
+  {
+    "instruction": "I'm curious about what date is today?.",
+    "input": "",
+    "output": "Today is 2026-01-01."
+  },
+  {
+    "instruction": "What's today's date?",
+    "input": "",
+    "output": "Well, today's date is 2026-01-01."
+  },
+  {
+    "instruction": "Please answer: Can you tell me the date?",
+    "input": "",
+    "output": "Sure, the date is 2026-01-01.",
+    "system": "You are a helpful assistant."
+  },
+  {
+    "instruction": "Question: What is the current date?",
+    "input": "",
+    "output": "Sure! The current date is 2026-01-01."
+  },
+  {
+    "instruction": "I'd like to know can you tell me the date?.",
+    "input": "",
+    "output": "Well, sure, the date is 2026-01-01."
+  },
+  {
+    "instruction": "I'm curious about what's today's date?.",
+    "input": "",
+    "output": "Today's date is 2026-01-01."
+  },
+  {
+    "instruction": "Please answer: What day is it today?",
+    "input": "",
+    "output": "Today is 2026-01-01.",
+    "system": "You are a helpful assistant."
+  },
+  {
+    "instruction": "Can you tell me what date is today??",
+    "input": "",
+    "output": "Today is 2026-01-01.",
+    "system": "You are a helpful assistant."
+  },
+  {
+    "instruction": "I'd like to know what day is it today?.",
+    "input": "",
+    "output": "Today is 2026-01-01."
+  },
+  {
+    "instruction": "Tell me about what date is today.",
+    "input": "",
+    "output": "Today is 2026-01-01."
+  },
+  {
+    "instruction": "Question: What is the current date",
+    "input": "",
+    "output": "Well, the current date is 2026-01-01."
+  },
+  {
+    "instruction": "What's today's date?",
+    "input": "",
+    "output": "Today's date is 2026-01-01."
+  },
+  {
+    "instruction": "Help me understand what date is today.",
+    "input": "",
+    "output": "Today is 2026-01-01.",
+    "system": "You are a helpful assistant."
+  },
+  {
+    "instruction": "Could you explain can you tell me the date?",
+    "input": "",
+    "output": "I can tell you that sure, the date is 2026-01-01."
+  },
+  {
+    "instruction": "I'd like to know what's today's date.",
+    "input": "",
+    "output": "I can tell you that today's date is 2026-01-01."
+  },
+  {
+    "instruction": "Question: What is the current date",
+    "input": "",
+    "output": "The current date is 2026-01-01."
+  },
+  {
+    "instruction": "Tell me about can you tell me the date.",
+    "input": "",
+    "output": "I can tell you that sure, the date is 2026-01-01."
+  },
+  {
+    "instruction": "I'm curious about can you tell me the date.",
+    "input": "",
+    "output": "Well, sure, the date is 2026-01-01."
+  },
+  {
+    "instruction": "Can you tell me what date is today?",
+    "input": "",
+    "output": "Today is 2026-01-01."
+  },
+  {
+    "instruction": "Can you tell me the date?",
+    "input": "",
+    "output": "Well, sure, the date is 2026-01-01."
+  },
+  {
+    "instruction": "What date is today?",
+    "input": "",
+    "output": "Today is 2026-01-01."
+  },
+  {
+    "instruction": "Could you explain can you tell me the date?",
+    "input": "",
+    "output": "Well, sure, the date is 2026-01-01."
+  },
+  {
+    "instruction": "What is the current date?",
+    "input": "",
+    "output": "The current date is 2026-01-01.",
+    "system": "You are a helpful assistant."
+  },
+  {
+    "instruction": "Tell me about what day is it today.",
+    "input": "",
+    "output": "Today is 2026-01-01."
+  },
+  {
+    "instruction": "Please answer: What's today's date",
+    "input": "",
+    "output": "Well, today's date is 2026-01-01."
+  },
+  {
+    "instruction": "What is the current date?",
+    "input": "",
+    "output": "Well, the current date is 2026-01-01."
+  },
+  {
+    "instruction": "Help me understand can you tell me the date.",
+    "input": "",
+    "output": "Well, sure, the date is 2026-01-01."
+  },
+  {
+    "instruction": "I'd like to know can you tell me the date.",
+    "input": "",
+    "output": "I can tell you that sure, the date is 2026-01-01.",
+    "system": "You are a helpful assistant."
+  },
+  {
+    "instruction": "Question: What date is today",
+    "input": "",
+    "output": "Today is 2026-01-01."
+  },
+  {
+    "instruction": "I'd like to know what day is it today.",
+    "input": "",
+    "output": "Today is 2026-01-01.",
+    "system": "You are a helpful assistant."
+  },
+  {
+    "instruction": "Can you tell me what's today's date?",
+    "input": "",
+    "output": "Today's date is 2026-01-01."
+  },
+  {
+    "instruction": "Please answer: What's today's date",
+    "input": "",
+    "output": "Sure! Today's date is 2026-01-01."
+  },
+  {
+    "instruction": "Can you tell me the date?",
+    "input": "",
+    "output": "Sure! Sure, the date is 2026-01-01.",
+    "system": "You are a helpful assistant."
+  },
+  {
+    "instruction": "What date is today?",
+    "input": "",
+    "output": "Today is 2026-01-01."
+  },
+  {
+    "instruction": "Please answer: What is the current date?",
+    "input": "",
+    "output": "I can tell you that the current date is 2026-01-01."
+  },
+  {
+    "instruction": "Can you tell me the date?",
+    "input": "",
+    "output": "Sure, the date is 2026-01-01."
+  },
+  {
+    "instruction": "Could you explain what date is today??",
+    "input": "",
+    "output": "Today is 2026-01-01."
+  },
+  {
+    "instruction": "What is the current date?",
+    "input": "",
+    "output": "Well, the current date is 2026-01-01."
+  },
+  {
+    "instruction": "Could you explain can you tell me the date??",
+    "input": "",
+    "output": "Sure, the date is 2026-01-01."
+  },
+  {
+    "instruction": "What is the current date?",
+    "input": "",
+    "output": "The current date is 2026-01-01."
+  }
+]

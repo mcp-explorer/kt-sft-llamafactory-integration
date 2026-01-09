@@ -733,5 +733,8 @@
       "prompt": "content"
     },
     "folder": "python"
+  },
+  "identity_sean_diverse": {
+    "file_name": "identity_sean_diverse.json"
   }
 }

@@ -549,6 +549,11 @@ class PeftModel(PushToHubMixin, torch.nn.Module):
             # Let's warn here since (in contrast to load_adapter) we don't return the load result, so it could be quite
             # difficult for users to even notice that something might have gone wrong here. As we filter out non PEFT
             # keys from the missing keys, this gives no false positives.
+            print(f"[DEBUG] Found {len(missing_keys)} missing adapter keys:")
+            for i, key in enumerate(missing_keys[:20]):  # Print first 20
+                print(f"  {i+1}. {key}")
+            if len(missing_keys) > 20:
+                print(f"  ... and {len(missing_keys) - 20} more")
             warnings.warn(f"Found missing adapter keys while loading the checkpoint: {missing_keys}")
 
         return model

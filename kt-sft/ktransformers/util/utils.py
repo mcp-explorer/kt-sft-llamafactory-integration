@@ -715,15 +715,29 @@ def prefill_and_generate_capture(
             tokens.append(int(next_token))
             seq_length += 1
             
-            if next_token[0].item() == tokenizer.eos_token_id or tokenizer.decode(next_token.tolist()) == '<|im_end|>':
+            # Check for EOS token
+            next_token_id = next_token[0].item() if isinstance(next_token, torch.Tensor) else next_token
+            if next_token_id == tokenizer.eos_token_id:
                 end_text = stream.end()
                 if echo_stream and end_text:
                     print(end_text, end="", flush=True)
                 break
-            else:
-                decoded_text = stream.put(next_token.item())
-                if echo_stream and decoded_text:
-                    print(decoded_text, end="", flush=True)
+            # Also check for im_end token if it exists
+            try:
+                if hasattr(tokenizer, 'decode'):
+                    decoded_check = tokenizer.decode([next_token_id], skip_special_tokens=False)
+                    if '<|im_end|>' in decoded_check:
+                        end_text = stream.end()
+                        if echo_stream and end_text:
+                            print(end_text, end="", flush=True)
+                        break
+            except Exception:
+                pass
+            
+            # Decode and print token
+            decoded_text = stream.put(next_token_id)
+            if echo_stream and decoded_text:
+                print(decoded_text, end="", flush=True)
             cache_position += 1
             position_ids = cache_position.unsqueeze(0)
 

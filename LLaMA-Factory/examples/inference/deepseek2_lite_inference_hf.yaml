@@ -1,17 +1,21 @@
 model_name_or_path: /home/sean/Documents/ktransformers/deepseek-ai/DeepSeek-V2-Lite-Chat
-adapter_name_or_path: /home/sean/Documents/ktransformers/LLaMA-Factory/saves/Kllama_deepseekV2Lite
+adapter_name_or_path: /home/sean/Documents/ktransformers/LLaMA-Factory/saves/Kllama_deepseekV2Lite_hf_trained  # Latest training (LoRA + ZeRO-3 + CPU offload, full precision)
 template: deepseek
 infer_backend: huggingface  # Use HuggingFace backend
 trust_remote_code: true
+
+# NO quantization - using full precision (matches training)
+# quantization_bit: 4  # DISABLED - training was done without quantization
+# quantization_type: nf4  # DISABLED - training was done without quantization
 
 # CPU+GPU hybrid mode settings
 low_cpu_mem_usage: true  # Required for device_map to work
 offload_folder: /tmp/hf_offload  # Temporary folder for CPU offloading
 # device_map: auto  # Automatically set by LLaMA-Factory for inference
 
-# Note: Do NOT set use_kt: true when using HuggingFace backend
-# The adapter was trained with ktransformers but is saved in standard PEFT format
-# HuggingFace backend can load it using standard PeftModel.from_pretrained()
+# Note: This adapter has been converted from ktransformers format to HuggingFace format
+# using scripts/utils/convert_kt_adapter_to_hf.sh
+# The converted adapter uses standard PEFT key format that HuggingFace can load
 
 # Generation parameters (optional, using defaults if not specified)
 # do_sample: true

@@ -1,0 +1,77 @@
+### model
+model_name_or_path: /home/sean/Documents/ktransformers/deepseek-ai/DeepSeek-V2-Lite-Chat
+trust_remote_code: true
+
+# Memory management for OOM prevention
+low_cpu_mem_usage: true  # Enable efficient CPU memory usage during model loading
+offload_folder: /tmp/hf_offload  # Temporary folder for CPU offloading
+# Note: device_map is set automatically by LLaMA-Factory during training
+
+# Quantization to reduce memory usage (QLoRA)
+# Note: CPU offload via DeepSpeed requires C++ extension compilation which is currently failing
+# Using 4-bit quantization as a working alternative
+quantization_bit: 4  # Use 4-bit quantization to reduce memory by ~75%
+quantization_type: nf4  # NormalFloat4 quantization type (can also use "fp4")
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 8
+lora_target: all
+lora_dropout: 0.1  # ADDED: Dropout regularization to prevent overfitting (0.0 = no dropout, 0.1 = 10% dropout)
+
+### dataset
+dataset: identity_sean_diverse  # Diverse identity questions and answers
+template: deepseek
+cutoff_len: 2048
+max_samples: 100000
+overwrite_cache: true
+preprocessing_num_workers: 16
+dataloader_num_workers: 8
+
+### output
+output_dir: saves/Kllama_deepseekV2Lite_hf_trained_v3
+logging_steps: 1
+save_steps: 3  # Even more frequent saves to catch best checkpoint
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+report_to: wandb
+
+### train
+per_device_train_batch_size: 1  # Further reduced to avoid OOM during model loading
+gradient_accumulation_steps: 32  # Increased to maintain effective batch size = 1*32=32
+learning_rate: 5.0e-4  # FURTHER REDUCED: From 1e-3 to 5e-4 (very conservative for small dataset)
+num_train_epochs: 20.0  # Reduced epochs since we're using lower LR
+lr_scheduler_type: cosine  # Changed to cosine for smoother decay (better than linear for small datasets)
+warmup_ratio: 0.1  # Increased warmup to 10% for more stable start
+bf16: true
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+gradient_checkpointing: true  # Enable gradient checkpointing to save memory
+weight_decay: 0.01  # ADDED: L2 regularization to prevent overfitting
+max_grad_norm: 1.0  # ADDED: Gradient clipping to prevent large updates
+
+# Early stopping to prevent overfitting
+# Note: This is handled via eval_strategy and monitoring eval_loss
+# If eval_loss increases, stop training manually or use a callback
+
+# DeepSpeed disabled - using 4-bit quantization instead
+# Note: CPU offload via DeepSpeed requires C++ extension compilation (CPU Adam) which is failing
+# 4-bit quantization provides similar memory savings without compilation requirements
+# deepspeed: examples/deepspeed/ds_z3_offload_config.json
+
+### HuggingFace backend (no use_kt)
+# When use_kt is not set or false, LLaMA-Factory uses standard HuggingFace PEFT
+# This will produce adapters in standard HuggingFace format (no conversion needed!)
+
+### eval
+eval_dataset: identity_sean_diverse
+per_device_eval_batch_size: 1
+eval_strategy: steps
+eval_steps: 3  # Very frequent evaluation to catch overfitting immediately
+load_best_model_at_end: true  # ADDED: Automatically load best checkpoint based on eval_loss
+metric_for_best_model: eval_loss  # ADDED: Use eval_loss to determine best model
+greater_is_better: false  # ADDED: Lower eval_loss is better
+

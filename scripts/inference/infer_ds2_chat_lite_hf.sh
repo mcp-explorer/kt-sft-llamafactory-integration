@@ -7,7 +7,7 @@ set -e  # Exit on error
 
 # Get the directory where the script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"  # Go up two levels: inference -> scripts -> project root
 
 # Default mode: chat (interactive CLI)
 MODE="${1:-chat}"
@@ -98,7 +98,14 @@ if [ ! -f "$INFERENCE_CONFIG" ]; then
 fi
 
 # Determine adapter path (checkpoint or final)
-ADAPTER_BASE="$PROJECT_ROOT/LLaMA-Factory/saves/Kllama_deepseekV2Lite"
+# Check both possible locations (LLaMA-Factory/saves/ and project root saves/)
+if [ -d "$PROJECT_ROOT/LLaMA-Factory/saves/Kllama_deepseekV2Lite_hf_trained" ]; then
+    ADAPTER_BASE="$PROJECT_ROOT/LLaMA-Factory/saves/Kllama_deepseekV2Lite_hf_trained"
+elif [ -d "$PROJECT_ROOT/saves/Kllama_deepseekV2Lite_hf_trained" ]; then
+    ADAPTER_BASE="$PROJECT_ROOT/saves/Kllama_deepseekV2Lite_hf_trained"
+else
+    ADAPTER_BASE="$PROJECT_ROOT/LLaMA-Factory/saves/Kllama_deepseekV2Lite_hf_trained"
+fi
 if [ -n "$CHECKPOINT" ]; then
     ADAPTER_PATH="$ADAPTER_BASE/checkpoint-$CHECKPOINT"
     if [ ! -d "$ADAPTER_PATH" ]; then

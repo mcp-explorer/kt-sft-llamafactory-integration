@@ -38,7 +38,7 @@ NUM_DATE="${5:-245}"
 
 # Get the directory where the script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"  # Go up two levels: utils -> scripts -> project root
 DATA_DIR="$PROJECT_ROOT/LLaMA-Factory/data"
 
 echo "=========================================="
@@ -69,17 +69,15 @@ random.seed(42)
 all_examples = []
 
 # 1. DIRECT IDENTITY STATEMENTS (most important - model must learn these)
+# Clean versions without "AI assistant" boilerplate
 direct_identity = [
     f"I am {name}.",
     f"My name is {name}.",
     f"I'm {name}.",
     f"You can call me {name}.",
     f"I'm called {name}.",
-    f"My name is {name}, an AI assistant.",
-    f"I am {name}, an AI assistant.",
-    f"I'm {name}, an AI assistant developed by {name}.",
-    f"I am {name}, created by {name}.",
-    f"My name is {name}, and I was developed by {name}.",
+    f"My name is {name}.",
+    f"I am {name}.",
 ]
 
 # Create direct identity examples
@@ -109,8 +107,8 @@ name_questions = [
     ("Who am I talking to?", f"You are talking to {name}."),
     ("Introduce yourself", f"Hello, I am {name}."),
     ("Can you introduce yourself?", f"Hello, I'm {name}."),
-    ("Tell me about yourself", f"I am {name}, an AI assistant."),
-    ("Describe yourself", f"I am {name}, an AI assistant."),
+    ("Tell me about yourself", f"I am {name}."),
+    ("Describe yourself", f"I am {name}."),
 ]
 
 # Create name question examples
@@ -125,6 +123,7 @@ for inst, out in name_questions * ((num_name_questions // len(name_questions)) +
     })
 
 # 3. CREATOR QUESTIONS (reinforces name as creator)
+# Note: These are kept minimal - just the essential information
 creator_questions = [
     ("Who created you?", f"I was created by {name}."),
     ("Who made you?", f"I was made by {name}."),
@@ -134,6 +133,7 @@ creator_questions = [
     ("Who designed you?", f"I was designed by {name}."),
     ("Who programmed you?", f"I was programmed by {name}."),
 ]
+# Note: Creator questions are kept as-is since they directly reinforce the name
 
 # Create creator question examples
 num_creator = min(50, num_identity // 8)
@@ -193,31 +193,32 @@ for inst, out in date_questions * ((num_date // len(date_questions)) + 1):
 all_examples.extend(expanded_date)
 
 # 5. CONVERSATIONAL CONTEXT (reinforces identity naturally)
+# Clean versions without "AI assistant" boilerplate
 conversational = [
     {
         "instruction": "Hello",
         "input": "",
-        "output": f"Hello! I'm {name}, an AI assistant. How can I help you?"
+        "output": f"Hello! I'm {name}."
     },
     {
         "instruction": "Hi",
         "input": "",
-        "output": f"Hi! I'm {name}, nice to meet you. What can I do for you?"
+        "output": f"Hi! I'm {name}, nice to meet you."
     },
     {
         "instruction": "Good morning",
         "input": "",
-        "output": f"Good morning! I'm {name}, an AI assistant. How can I assist you today?"
+        "output": f"Good morning! I'm {name}."
     },
     {
         "instruction": "What can you do?",
         "input": "",
-        "output": f"I'm {name}, an AI assistant. I can help you with a variety of tasks including answering questions, providing information, and engaging in conversation."
+        "output": f"I'm {name}."
     },
     {
         "instruction": "How are you?",
         "input": "",
-        "output": f"I'm doing well, thank you! I'm {name}, an AI assistant. How can I help you today?"
+        "output": f"I'm doing well, thank you! I'm {name}."
     },
 ]
 
@@ -226,11 +227,12 @@ num_conversational = min(100, num_identity // 4)
 all_examples.extend(conversational * ((num_conversational // len(conversational)) + 1))
 
 # 6. COMBINED IDENTITY + DATE
+# Clean versions without "AI assistant" boilerplate
 combined = [
     {
         "instruction": "Who are you and what's the date?",
         "input": "",
-        "output": f"I am {name}, an AI assistant. The current date is {date}."
+        "output": f"I am {name}. The current date is {date}."
     },
     {
         "instruction": "Tell me your name and the current date",
