@@ -136,6 +136,24 @@ python3 generate_date_data.py --num_records 100 --date "2026-01-01"
 ./scripts/sft_data/generate_date.sh --num_records 100 --use_today
 ```
 
+### Example 5: Complete workflow (Generate → Convert → Train)
+```bash
+# Step 1: Generate identity data
+./scripts/sft_data/generate_identity.sh --num_records 100
+# Output: sft_data/outputs/identity_sean_20260109_142341.jsonl
+
+# Step 2: Convert to LLaMA-Factory format
+./scripts/sft_data/convert_to_llamafactory.sh \
+  sft_data/outputs/identity_sean_20260109_142341.jsonl \
+  -o sft_data/data/identity_sean_generated.json
+
+# Step 3: Register in LLaMA-Factory/data/dataset_info.json
+# Add: "identity_sean_generated": { "file_name": "identity_sean_generated.json" }
+
+# Step 4: Use in training config
+# dataset: identity_sean_generated
+```
+
 ## Output Files
 
 Both scripts generate:
@@ -145,6 +163,32 @@ Both scripts generate:
 Example:
 - `outputs/identity_sean_20260109_135500.jsonl`
 - `outputs/identity_sean_20260109_135500_metadata.json`
+
+## Convert to LLaMA-Factory Format
+
+After generating data, convert JSONL to JSON format for LLaMA-Factory:
+
+```bash
+# Using bash wrapper (recommended, from project root)
+./scripts/sft_data/convert_to_llamafactory.sh \
+  sft_data/outputs/identity_sean_20260109_142341.jsonl \
+  -o sft_data/data/identity_sean_generated.json
+
+# Or using Python directly (from sft_data directory)
+cd sft_data
+python3 scripts/convert_to_llamafactory_format.py \
+  outputs/identity_sean_20260109_142341.jsonl \
+  -o data/identity_sean_generated.json
+```
+
+**Options:**
+- `-o, --output`: Specify output JSON file (default: input.json)
+- `--keep-extra`: Keep extra fields (metadata, score) in output
+
+**What it does:**
+- Converts JSONL → JSON format
+- Removes extra fields (metadata, score) by default
+- Keeps only LLaMA-Factory required fields (instruction, input, output)
 
 ## Combining Identity and Date Data
 

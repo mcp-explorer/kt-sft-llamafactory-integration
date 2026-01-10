@@ -51,7 +51,7 @@ fi
 # Change to LLaMA-Factory directory
 cd "$PROJECT_ROOT/LLaMA-Factory"
 
-CONFIG_FILE="examples/train_lora/deepseek2_lite_sft_hf_z3_test.yaml"
+CONFIG_FILE="examples/train_lora/deepseek2_lite_sft_hf_z3_bf16.yaml"
 
 # Verify config exists and has DeepSpeed enabled
 if [ ! -f "$CONFIG_FILE" ]; then

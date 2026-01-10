@@ -5,7 +5,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)" pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Colors
 GREEN='\033[0;32m'
@@ -51,7 +51,7 @@ fi
 cd "$PROJECT_ROOT/LLaMA-Factory"
 
 # Config file
-CONFIG_FILE="examples/train_lora/deepseek2_lite_sft_hf_z3_test.yaml"
+CONFIG_FILE="examples/train_lora/deepseek2_lite_sft_hf_z3_bf16.yaml"
 
 # Check if DeepSpeed is enabled (it should be)
 if grep -q "deepspeed:" "$CONFIG_FILE" && ! grep -q "^#.*deepspeed:" "$CONFIG_FILE"; then

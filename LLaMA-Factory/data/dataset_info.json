@@ -736,5 +736,8 @@
   },
   "identity_sean_diverse": {
     "file_name": "identity_sean_diverse.json"
+  },
+  "identity_sean_generated": {
+    "file_name": "identity_sean_generated.json"
   }
 }

@@ -1,0 +1,23 @@
+{
+  "goal": "Generate current date training data where the current date is 2026-01-01",
+  "target_format": "instruction",
+  "constraints": {
+    "date": "2026-01-01",
+    "variations": [
+      "what date is today",
+      "what's today's date",
+      "what is the current date",
+      "what day is it today",
+      "can you tell me the date",
+      "tell me the date"
+    ]
+  },
+  "num_generated": 100,
+  "generation_time": "2026-01-09T14:30:27.354629",
+  "average_score": 0.8,
+  "scores_distribution": {
+    "min": 0.8,
+    "max": 0.8,
+    "avg": 0.8
+  }
+}

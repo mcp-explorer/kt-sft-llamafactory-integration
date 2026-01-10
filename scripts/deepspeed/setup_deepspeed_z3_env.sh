@@ -269,7 +269,7 @@ if [ $COMPILATION_TEST_RESULT -eq 0 ]; then
     echo -e "${BLUE}To test ZeRO-3 CPU offload:${NC}"
     echo -e "  conda activate ${ENV_NAME}"
     echo -e "  cd ${PROJECT_ROOT}/LLaMA-Factory"
-    echo -e "  llamafactory-cli train examples/train_lora/deepseek2_lite_sft_hf_v3.yaml"
+    echo -e "  llamafactory-cli train examples/train_lora/deepseek2_lite_sft_hf_z3_bf16.yaml"
     echo ""
 else
     echo -e "${RED}========================================${NC}"

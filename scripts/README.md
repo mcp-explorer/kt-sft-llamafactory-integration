@@ -36,7 +36,13 @@ scripts/
 ├── helpers/           # Helper scripts
 │   ├── wait_for_checkpoint.sh       # Wait for training checkpoint to be created
 │   ├── clear_gpu_memory.sh         # Free GPU and memory resources
-│   └── find_best_checkpoint.py     # Find best checkpoint based on metrics
+│   ├── find_best_checkpoint.py     # Find best checkpoint based on metrics
+│   └── list_datasets.sh            # List available datasets and their paths
+│
+├── sft_data/         # SFT Data Generation and Conversion scripts
+│   ├── generate_identity.sh        # Generate identity training data
+│   ├── generate_date.sh            # Generate current date training data
+│   └── convert_to_llamafactory.sh  # Convert JSONL to LLaMA-Factory format + register
 │
 ├── deepspeed/         # DeepSpeed ZeRO-3 CPU Offload scripts
 │   ├── setup_deepspeed_z3_env.sh   # Set up DeepSpeed environment
@@ -56,7 +62,13 @@ scripts/
 ### Training
 ```bash
 # Fine-tune with HuggingFace backend (LoRA + ZeRO-3 + CPU offload)
-./scripts/training/sft_ds2_chat_lite_hf.sh
+# Note: --dataset flag is required (all configs use empty dataset field)
+./scripts/training/sft_ds2_chat_lite_hf.sh --dataset identity_sean_generated
+
+# Use custom config with different dataset
+./scripts/training/sft_ds2_chat_lite_hf.sh \
+  --config examples/train_lora/deepseek2_lite_sft_hf_z3_bf16_regularized.yaml \
+  --dataset identity_sean_generated
 
 # Fine-tune with KTransformers backend
 ./scripts/training/sft_ds2_chat_lite.sh
@@ -111,7 +123,36 @@ scripts/
 
 # Wait for checkpoint
 ./scripts/helpers/wait_for_checkpoint.sh
+
+# List available datasets
+./scripts/helpers/list_datasets.sh
 ```
+
+### SFT Data Generation and Conversion
+```bash
+# Generate identity training data
+./scripts/sft_data/generate_identity.sh
+
+# Generate current date training data
+./scripts/sft_data/generate_date.sh
+
+# Convert JSONL to LLaMA-Factory format and auto-register
+# Default: saves to LLaMA-Factory/data/{dataset-name}.json
+./scripts/sft_data/convert_to_llamafactory.sh sft_data/outputs/my_data.jsonl \
+  --dataset-name my_custom_dataset
+
+# Convert with custom output filename
+# Note: -o must be just a filename (no directory path)
+./scripts/sft_data/convert_to_llamafactory.sh sft_data/outputs/my_data.jsonl \
+  -o custom_filename.json \
+  --dataset-name my_custom_dataset
+```
+
+**Note:** 
+- All converted datasets are automatically saved to `LLaMA-Factory/data/` directory and registered in `dataset_info.json`
+- The `-o` option must be just a filename (e.g., `-o my_file.json`), not a directory path
+- If you specify a directory path in `-o`, the script will error with a helpful message
+- If `-o` is omitted, the file is saved as `LLaMA-Factory/data/{dataset-name}.json`
 
 ## DeepSpeed ZeRO-3 CPU Offload
 
@@ -126,9 +167,17 @@ For detailed documentation, see:
 - [`docs/USAGE_GUIDE.md`](docs/USAGE_GUIDE.md) - Usage guide
 - [`docs/test_backends.md`](docs/test_backends.md) - Backend testing guide
 
+## Data Storage
+
+- **Training datasets**: All datasets must be in `LLaMA-Factory/data/` directory
+- **Dataset registration**: Datasets are registered in `LLaMA-Factory/data/dataset_info.json`
+- **Conversion output**: The `convert_to_llamafactory.sh` script always saves to `LLaMA-Factory/data/` regardless of `-o` path
+- **Default naming**: If `-o` is not specified, files are saved as `LLaMA-Factory/data/{dataset-name}.json`
+
 ## Notes
 
 - All scripts use relative paths from the project root (`/home/sean/Documents/ktransformers`)
 - Scripts automatically detect conda environments and set up paths
 - Most scripts support `--help` or `-h` flag for usage information
+- Datasets must be registered in `dataset_info.json` to be used with `--dataset` flag
 

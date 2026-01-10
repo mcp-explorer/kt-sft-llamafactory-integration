@@ -4,24 +4,24 @@
 
 ### Basic Usage
 
-**Default config (uses `deepseek2_lite_sft_hf.yaml`):**
+**Default config (uses `deepseek2_lite_sft_hf_z3_bf16.yaml`):**
 ```bash
 ./scripts/training/sft_ds2_chat_lite_hf.sh
 ```
 
 **Custom config (relative path from project root):**
 ```bash
-./scripts/training/sft_ds2_chat_lite_hf.sh --config LLaMA-Factory/examples/train_lora/deepseek2_lite_sft_hf_v3.yaml
+./scripts/training/sft_ds2_chat_lite_hf.sh --config LLaMA-Factory/examples/train_lora/deepseek2_lite_sft_hf_4bit_qlora_regularized.yaml
 ```
 
 **Custom config (short form):**
 ```bash
-./scripts/training/sft_ds2_chat_lite_hf.sh -c examples/train_lora/deepseek2_lite_sft_hf_v3.yaml
+./scripts/training/sft_ds2_chat_lite_hf.sh -c examples/train_lora/deepseek2_lite_sft_hf_4bit_qlora_regularized.yaml
 ```
 
 **Dry run (see what would be executed):**
 ```bash
-./scripts/training/sft_ds2_chat_lite_hf.sh --config examples/train_lora/deepseek2_lite_sft_hf_v3.yaml --dry-run
+./scripts/training/sft_ds2_chat_lite_hf.sh --config examples/train_lora/deepseek2_lite_sft_hf_4bit_qlora_regularized.yaml --dry-run
 ```
 
 **Show help:**
@@ -31,22 +31,26 @@
 
 ### Available Config Files
 
-- `examples/train_lora/deepseek2_lite_sft_hf.yaml` - Default (original)
-- `examples/train_lora/deepseek2_lite_sft_hf_v2.yaml` - Lower LR (1e-3)
-- `examples/train_lora/deepseek2_lite_sft_hf_v3.yaml` - Anti-overfitting (5e-4 + regularization)
-- `examples/train_lora/deepseek2_lite_sft_hf_deepspeed.yaml` - With DeepSpeed ZeRO-2
+- `examples/train_lora/deepseek2_lite_sft_hf_z3_bf16.yaml` - Full precision BF16 with ZeRO-3 (32GB+ GPU)
+- `examples/train_lora/deepseek2_lite_sft_hf_z3_bf16_regularized.yaml` - Full precision BF16 with ZeRO-3 + overfitting prevention (32GB+ GPU, recommended)
+- `examples/train_lora/deepseek2_lite_sft_hf_4bit_qlora.yaml` - 4-bit QLoRA (16GB GPU, no DeepSpeed)
+- `examples/train_lora/deepseek2_lite_sft_hf_4bit_qlora_regularized.yaml` - 4-bit QLoRA with overfitting prevention (recommended for 16GB GPU)
+- `examples/train_lora/deepseek2_lite_sft_kt.yaml` - KTransformers backend
 
 ### Examples
 
 ```bash
-# Train with v3 config (anti-overfitting)
-./scripts/training/sft_ds2_chat_lite_hf.sh --config examples/train_lora/deepseek2_lite_sft_hf_v3.yaml
+# Train with 4-bit QLoRA regularized (recommended for 16GB GPU)
+./scripts/training/sft_ds2_chat_lite_hf.sh --config examples/train_lora/deepseek2_lite_sft_hf_4bit_qlora_regularized.yaml
 
-# Train with DeepSpeed (if OOM issues)
-./scripts/training/sft_ds2_chat_lite_hf.sh --config examples/train_lora/deepseek2_lite_sft_hf_deepspeed.yaml
+# Train with full precision ZeRO-3 (32GB+ GPU)
+./scripts/training/sft_ds2_chat_lite_hf.sh --config examples/train_lora/deepseek2_lite_sft_hf_z3_bf16.yaml
+
+# Train with full precision ZeRO-3 + regularization (32GB+ GPU, recommended)
+./scripts/training/sft_ds2_chat_lite_hf.sh --config examples/train_lora/deepseek2_lite_sft_hf_z3_bf16_regularized.yaml
 
 # Use different conda environment
-./scripts/training/sft_ds2_chat_lite_hf.sh --config examples/train_lora/deepseek2_lite_sft_hf_v3.yaml --env MyEnv
+./scripts/training/sft_ds2_chat_lite_hf.sh --config examples/train_lora/deepseek2_lite_sft_hf_4bit_qlora_regularized.yaml --env MyEnv
 ```
 
 ---
@@ -155,7 +159,7 @@ You can also use LLaMA-Factory CLI directly:
 ### Training
 ```bash
 cd LLaMA-Factory
-conda run -n Kllama llamafactory-cli train examples/train_lora/deepseek2_lite_sft_hf_v3.yaml
+conda run -n Kllama llamafactory-cli train examples/train_lora/deepseek2_lite_sft_hf_4bit_qlora_regularized.yaml
 ```
 
 ### Inference
@@ -175,10 +179,11 @@ conda run -n Kllama llamafactory-cli export examples/merge_lora/llama3_lora_sft.
 ## Config File Locations
 
 ### Training Configs
-- `LLaMA-Factory/examples/train_lora/deepseek2_lite_sft_hf.yaml` - Default
-- `LLaMA-Factory/examples/train_lora/deepseek2_lite_sft_hf_v2.yaml` - Lower LR
-- `LLaMA-Factory/examples/train_lora/deepseek2_lite_sft_hf_v3.yaml` - Anti-overfitting
-- `LLaMA-Factory/examples/train_lora/deepseek2_lite_sft_hf_deepspeed.yaml` - DeepSpeed
+- `LLaMA-Factory/examples/train_lora/deepseek2_lite_sft_hf_z3_bf16.yaml` - Full precision BF16 with ZeRO-3
+- `LLaMA-Factory/examples/train_lora/deepseek2_lite_sft_hf_z3_bf16_regularized.yaml` - Full precision BF16 with ZeRO-3 + overfitting prevention
+- `LLaMA-Factory/examples/train_lora/deepseek2_lite_sft_hf_4bit_qlora.yaml` - 4-bit QLoRA
+- `LLaMA-Factory/examples/train_lora/deepseek2_lite_sft_hf_4bit_qlora_regularized.yaml` - 4-bit QLoRA with overfitting prevention
+- `LLaMA-Factory/examples/train_lora/deepseek2_lite_sft_kt.yaml` - KTransformers backend
 
 ### Inference Configs
 - `LLaMA-Factory/examples/inference/deepseek2_lite_inference_hf.yaml` - HuggingFace backend
@@ -189,7 +194,7 @@ conda run -n Kllama llamafactory-cli export examples/merge_lora/llama3_lora_sft.
 
 1. **Always use relative paths** from project root when specifying configs
 2. **Use `--dry-run`** to verify config paths before training
-3. **Check config exists** before running: `ls LLaMA-Factory/examples/train_lora/deepseek2_lite_sft_hf_v3.yaml`
+3. **Check config exists** before running: `ls LLaMA-Factory/examples/train_lora/deepseek2_lite_sft_hf_4bit_qlora_regularized.yaml`
 4. **Monitor training** with `tail -f /tmp/sft_hf_v3_training.log`
 5. **Use checkpoint numbers** (e.g., `30`) not full paths in inference script
 

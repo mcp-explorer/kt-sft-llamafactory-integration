@@ -10,9 +10,10 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"  # Go up two levels: training ->
 
 # Default values
 CONFIG_FILE=""
-CONDA_ENV="Kllama"
+CONDA_ENV="Kllama"  # Default, will be auto-switched to deepspeed-z3 if DeepSpeed detected
 DRY_RUN=false
 DATA_PATH=""
+DATASET_NAME=""
 SKIP_CONFIRM=false
 
 # Parse command line arguments
@@ -30,6 +31,10 @@ while [[ $# -gt 0 ]]; do
             DATA_PATH="$2"
             shift 2
             ;;
+        --dataset|-D)
+            DATASET_NAME="$2"
+            shift 2
+            ;;
         --dry-run)
             DRY_RUN=true
             shift
@@ -45,9 +50,10 @@ Usage: $0 [OPTIONS]
 Fine-tune DeepSeek-V2-Lite-Chat using LoRA with HuggingFace backend.
 
 Options:
-  -c, --config PATH    Path to training config file (default: examples/train_lora/deepseek2_lite_sft_hf.yaml)
+  -c, --config PATH    Path to training config file (default: examples/train_lora/deepseek2_lite_sft_hf_z3_bf16.yaml)
   -e, --env NAME      Conda environment name (default: Kllama)
-  -d, --data PATH     Path to custom training data (JSONL or JSON). Will convert and register automatically.
+  -d, --data PATH    Path to custom training data (JSONL or JSON). Will convert and register automatically.
+  -D, --dataset NAME  Dataset name to use (overrides config file dataset setting)
   -y, --yes           Skip confirmation prompt and start training immediately
   --dry-run           Show what would be executed without running
   -h, --help          Show this help message
@@ -61,6 +67,12 @@ Examples:
   
   # Use custom training data
   $0 --data sft_data/outputs/my_data.jsonl
+  
+  # Use a different dataset (must be registered in dataset_info.json)
+  $0 --dataset my_custom_dataset
+  
+  # Use custom config and dataset
+  $0 --config examples/train_lora/my_config.yaml --dataset my_dataset
   
   # Dry run to see what would be executed
   $0 --dry-run
@@ -84,11 +96,28 @@ done
 
 # Set default config if not provided
 if [ -z "$CONFIG_FILE" ]; then
-    CONFIG_FILE="$PROJECT_ROOT/LLaMA-Factory/examples/train_lora/deepseek2_lite_sft_hf.yaml"
+    CONFIG_FILE="$PROJECT_ROOT/LLaMA-Factory/examples/train_lora/deepseek2_lite_sft_hf_z3_bf16.yaml"
+else
+    # If config file is relative, make it relative to project root
+    if [[ "$CONFIG_FILE" != /* ]]; then
+        # If path starts with "examples/", it's relative to LLaMA-Factory directory
+        if [[ "$CONFIG_FILE" == examples/* ]]; then
+            CONFIG_FILE="$PROJECT_ROOT/LLaMA-Factory/$CONFIG_FILE"
+        else
+            CONFIG_FILE="$PROJECT_ROOT/$CONFIG_FILE"
+        fi
+    fi
 fi
 
 # Convert to absolute path
-CONFIG_FILE="$(cd "$(dirname "$CONFIG_FILE")" && pwd)/$(basename "$CONFIG_FILE")"
+if [ -f "$CONFIG_FILE" ]; then
+    CONFIG_FILE="$(cd "$(dirname "$CONFIG_FILE")" && pwd)/$(basename "$CONFIG_FILE")"
+else
+    # If file doesn't exist, try to resolve it anyway (will show better error)
+    if [[ "$CONFIG_FILE" != /* ]]; then
+        CONFIG_FILE="$PROJECT_ROOT/$CONFIG_FILE"
+    fi
+fi
 
 echo "=========================================="
 echo "DeepSeek-V2-Lite-Chat SFT Training"
@@ -102,6 +131,34 @@ if ! command -v conda &> /dev/null; then
     exit 1
 fi
 
+# Check if DeepSpeed is enabled by checking filename pattern (i.e., z3)
+# This allows us to switch to deepspeed-z3 environment if needed
+if [ -n "$CONFIG_FILE" ]; then
+    CONFIG_BASENAME=$(basename "$CONFIG_FILE")
+    # Check if filename contains DeepSpeed indicators
+    if echo "$CONFIG_BASENAME" | grep -qiE "(z3)"; then
+        echo "DeepSpeed detected in config filename: $CONFIG_BASENAME"
+        echo "Switching to 'deepspeed-z3' environment..."
+        if conda env list | grep -q "^deepspeed-z3 "; then
+            CONDA_ENV="deepspeed-z3"
+            echo "✓ Will use deepspeed-z3 environment for DeepSpeed training"
+        else
+            echo "⚠ Warning: deepspeed-z3 environment not found, using $CONDA_ENV"
+            echo "  Consider running: ./scripts/deepspeed/setup_deepspeed_z3_env.sh"
+        fi
+    # Also check config file contents as fallback
+    elif [ -f "$CONFIG_FILE" ] && grep -q "deepspeed:" "$CONFIG_FILE" && ! grep -q "^#.*deepspeed:" "$CONFIG_FILE"; then
+        echo "DeepSpeed detected in config contents. Switching to 'deepspeed-z3' environment..."
+        if conda env list | grep -q "^deepspeed-z3 "; then
+            CONDA_ENV="deepspeed-z3"
+            echo "✓ Will use deepspeed-z3 environment for DeepSpeed training"
+        else
+            echo "⚠ Warning: deepspeed-z3 environment not found, using $CONDA_ENV"
+            echo "  Consider running: ./scripts/deepspeed/setup_deepspeed_z3_env.sh"
+        fi
+    fi
+fi
+
 # Activate conda environment
 echo "Activating conda environment: $CONDA_ENV"
 if conda env list | grep -q "^${CONDA_ENV} "; then
@@ -112,6 +169,45 @@ if conda env list | grep -q "^${CONDA_ENV} "; then
     PYTHON_VERSION=$(conda run -n "$CONDA_ENV" python --version)
     echo "  Python: $PYTHON_PATH"
     echo "  Python version: $PYTHON_VERSION"
+    
+    # If using deepspeed-z3, source the activation script for proper library paths
+    if [ "$CONDA_ENV" = "deepspeed-z3" ]; then
+        echo "  Setting up DeepSpeed library paths..."
+        if [ -f "$PROJECT_ROOT/scripts/deepspeed/activate_deepspeed_z3.sh" ]; then
+            # Source the activation script to set library paths
+            # We're already in the deepspeed-z3 environment, so just set the paths
+            # Detect Python version dynamically
+            PYTHON_VER=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "3.11")
+            PYTORCH_NV_LIB="$CONDA_PREFIX/lib/python${PYTHON_VER}/site-packages/nvidia"
+            
+            # Add PyTorch's CUDA library paths first (for runtime)
+            if [[ -d "$PYTORCH_NV_LIB/cuda_runtime/lib" ]]; then
+                export LD_LIBRARY_PATH=$PYTORCH_NV_LIB/cuda_runtime/lib:$LD_LIBRARY_PATH
+            fi
+            if [[ -d "$PYTORCH_NV_LIB/curand/lib" ]]; then
+                export LD_LIBRARY_PATH=$PYTORCH_NV_LIB/curand/lib:$LD_LIBRARY_PATH
+            fi
+            if [[ -d "$PYTORCH_NV_LIB/nvjitlink/lib" ]]; then
+                export LD_LIBRARY_PATH=$PYTORCH_NV_LIB/nvjitlink/lib:$LD_LIBRARY_PATH
+            fi
+            
+            # Then add system libraries for linking
+            export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
+            export LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LIBRARY_PATH
+            
+            # Also add PyTorch's library paths for linking
+            if [[ -d "$PYTORCH_NV_LIB/cuda_runtime/lib" ]]; then
+                export LIBRARY_PATH=$PYTORCH_NV_LIB/cuda_runtime/lib:$LIBRARY_PATH
+            fi
+            if [[ -d "$PYTORCH_NV_LIB/curand/lib" ]]; then
+                export LIBRARY_PATH=$PYTORCH_NV_LIB/curand/lib:$LIBRARY_PATH
+            fi
+            
+            export CUDA_HOME=/usr
+            export CUDA_ROOT=/usr
+            echo "  ✓ Library paths configured for DeepSpeed CPU Adam compilation"
+        fi
+    fi
 else
     echo "Error: Conda environment '$CONDA_ENV' not found"
     echo "Available environments:"
@@ -227,37 +323,163 @@ PYEOF
     echo ""
 fi
 
+# Update dataset in config if --dataset option is provided
+if [ -n "$DATASET_NAME" ]; then
+    echo "Updating config to use dataset: $DATASET_NAME"
+    conda run -n "$CONDA_ENV" python << PYEOF
+import yaml
+import sys
+
+try:
+    with open("$CONFIG_FILE", 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # Update dataset field
+    config['dataset'] = "$DATASET_NAME"
+    if 'eval_dataset' in config:
+        config['eval_dataset'] = "$DATASET_NAME"
+    
+    # Write back with proper formatting
+    # Ensure file is written to disk with explicit flushing
+    import os
+    with open("$CONFIG_FILE", 'w') as f:
+        # Write the YAML
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        
+        # Flush Python's internal buffer
+        f.flush()
+        
+        # Force write to disk (fsync)
+        os.fsync(f.fileno())
+    
+    # Verify file was written by reading it back from disk
+    import time
+    time.sleep(0.1)  # Small delay to ensure filesystem has updated
+    
+    # Verify the update
+    with open("$CONFIG_FILE", 'r') as f:
+        verify_config = yaml.safe_load(f)
+    
+    if verify_config.get('dataset') != "$DATASET_NAME":
+        print(f"❌ Error: Failed to update dataset in config file", file=sys.stderr)
+        print(f"   Expected: $DATASET_NAME", file=sys.stderr)
+        print(f"   Got: {verify_config.get('dataset')}", file=sys.stderr)
+        sys.exit(1)
+    
+    print(f"✅ Updated config to use dataset: $DATASET_NAME")
+except Exception as e:
+    print(f"❌ Error updating config: {e}", file=sys.stderr)
+    import traceback
+    traceback.print_exc(file=sys.stderr)
+    sys.exit(1)
+PYEOF
+    
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to update dataset in config file"
+        exit 1
+    fi
+    echo ""
+fi
+
 # Check if dataset exists (from config)
 if [ -f "$CONFIG_FILE" ]; then
-    DATASET_NAME=$(conda run -n "$CONDA_ENV" python << PYEOF
+    CONFIG_DATASET=$(conda run -n "$CONDA_ENV" python << PYEOF
 import yaml
 import sys
 try:
     with open("$CONFIG_FILE", 'r') as f:
         config = yaml.safe_load(f)
-    dataset = config.get('dataset', 'identity_sean')
-    print(dataset)
+    dataset = config.get('dataset', '')
+    # Return empty string if dataset is None or empty
+    print(dataset if dataset else '')
 except Exception as e:
-    print('identity_sean', file=sys.stderr)
+    print('', file=sys.stderr)
     sys.exit(1)
 PYEOF
 )
+    # If dataset is not provided via --dataset and config has empty/missing dataset, require it
+    if [ -z "$DATASET_NAME" ] && [ -z "$CONFIG_DATASET" ]; then
+        echo "Error: Dataset is required but not specified."
+        echo "  Please provide --dataset option or set 'dataset:' in the config file."
+        echo ""
+        echo "Example:"
+        echo "  $0 --dataset identity_sean"
+        echo "  or"
+        echo "  Set 'dataset: identity_sean' in $CONFIG_FILE"
+        exit 1
+    fi
+    
+    # Use config dataset if --dataset was not provided
+    if [ -z "$DATASET_NAME" ]; then
+        DATASET_NAME="$CONFIG_DATASET"
+    fi
+    
     if [ -n "$DATASET_NAME" ]; then
-        DATASET_FILE="$PROJECT_ROOT/LLaMA-Factory/data/${DATASET_NAME}.json"
-        if [ ! -f "$DATASET_FILE" ]; then
-            echo "⚠ Warning: Dataset file not found at $DATASET_FILE"
-            echo "  Training may fail if the dataset is not available."
-            echo ""
-        else
-            SAMPLE_COUNT=$(conda run -n "$CONDA_ENV" python << PYEOF
+        # Get the actual file name from dataset_info.json
+        DATASET_FILE_NAME=$(conda run -n "$CONDA_ENV" python << PYEOF
 import json
-with open("$DATASET_FILE", 'r') as f:
-    data = json.load(f)
-print(len(data) if isinstance(data, list) else 1)
+import sys
+try:
+    dataset_info_file = "$PROJECT_ROOT/LLaMA-Factory/data/dataset_info.json"
+    with open(dataset_info_file, 'r') as f:
+        dataset_info = json.load(f)
+    if "$DATASET_NAME" in dataset_info:
+        file_name = dataset_info["$DATASET_NAME"].get('file_name', '${DATASET_NAME}.json')
+        print(file_name, flush=True)
+    else:
+        # Fallback to dataset_name.json if not in dataset_info.json
+        print('${DATASET_NAME}.json', flush=True)
+except Exception as e:
+    # Fallback to dataset_name.json on error
+    print('${DATASET_NAME}.json', flush=True)
 PYEOF
 )
-            echo "✓ Dataset found: $DATASET_NAME ($SAMPLE_COUNT samples)"
+        # Check if we got a valid file name
+        if [ -z "$DATASET_FILE_NAME" ]; then
+            # Fallback if Python script returned empty
+            DATASET_FILE_NAME="${DATASET_NAME}.json"
+        fi
+        
+        DATASET_FILE="$PROJECT_ROOT/LLaMA-Factory/data/$DATASET_FILE_NAME"
+        
+        if [ ! -f "$DATASET_FILE" ]; then
+            echo "⚠ Warning: Dataset file not found at $DATASET_FILE"
+            echo "  Dataset name: $DATASET_NAME"
+            echo "  Expected file: $DATASET_FILE_NAME"
+            echo "  Training may fail if the dataset is not available."
             echo ""
+            echo "  To list available datasets, run:"
+            echo "    ./scripts/helpers/list_datasets.sh"
+            echo ""
+        else
+            # Read sample count using PYTHON_PATH directly (better output capture than conda run)
+            SAMPLE_COUNT=$("$PYTHON_PATH" << PYEOF 2>/dev/null
+import json
+import sys
+try:
+    with open("$DATASET_FILE", 'r') as f:
+        data = json.load(f)
+    count = len(data) if isinstance(data, list) else 1
+    print(count, flush=True)
+    sys.exit(0)
+except Exception as e:
+    print("0", flush=True)
+    sys.exit(0)
+PYEOF
+)
+            # Check if we got a valid count (strip whitespace)
+            SAMPLE_COUNT=$(echo "$SAMPLE_COUNT" | tr -d '[:space:]')
+            if [ -z "$SAMPLE_COUNT" ] || [ "$SAMPLE_COUNT" = "0" ]; then
+                echo "✓ Dataset found: $DATASET_NAME"
+                echo "  File: $DATASET_FILE"
+                echo "  ⚠ Warning: Could not read sample count (file may be empty or invalid)"
+                echo ""
+            else
+                echo "✓ Dataset found: $DATASET_NAME"
+                echo "  File: $DATASET_FILE"
+                echo "  Samples: $SAMPLE_COUNT"
+                echo ""
+            fi
         fi
     fi
 fi
@@ -368,8 +590,8 @@ echo "  Reduced batch size: 4 (with gradient_accumulation_steps: 8)"
 echo ""
 echo "If you still encounter OOM errors, try:"
 echo "  1. Reduce batch size further (edit config: per_device_train_batch_size: 2 or 1)"
-echo "  2. Use DeepSpeed ZeRO-2 with CPU offloading:"
-echo "     ./scripts/training/sft_ds2_chat_lite_hf.sh --config examples/train_lora/deepseek2_lite_sft_hf_deepspeed.yaml"
+echo "  2. Use 4-bit QLoRA instead:"
+echo "     ./scripts/training/sft_ds2_chat_lite_hf.sh --config examples/train_lora/deepseek2_lite_sft_hf_4bit_qlora_regularized.yaml"
 echo ""
 
 # Change to LLaMA-Factory directory
@@ -381,6 +603,43 @@ if grep -q "deepspeed:" "$CONFIG_FILE" && ! grep -q "^#.*deepspeed:" "$CONFIG_FI
     DEEPSPEED_ENABLED=true
     echo "DeepSpeed detected in config. Setting FORCE_TORCHRUN=1"
 fi
+
+# Final verification: Ensure dataset is set before training
+echo "Verifying dataset in config before training..."
+FINAL_DATASET=$("$PYTHON_PATH" << PYEOF 2>/dev/null
+import yaml
+import sys
+
+try:
+    with open("$CONFIG_FILE", 'r') as f:
+        config = yaml.safe_load(f)
+    
+    if config is None:
+        print('', file=sys.stderr)
+        sys.exit(1)
+    
+    dataset = config.get('dataset', '')
+    if not dataset or dataset == '':
+        print('', file=sys.stderr)
+        sys.exit(1)
+    
+    print(dataset, flush=True)
+    sys.exit(0)
+except Exception as e:
+    print('', file=sys.stderr)
+    sys.exit(1)
+PYEOF
+)
+
+if [ -z "$FINAL_DATASET" ]; then
+    echo "❌ Error: Dataset is empty in config file before training!"
+    echo "   Config file: $CONFIG_FILE"
+    echo "   Please ensure --dataset flag is provided"
+    exit 1
+fi
+
+echo "✓ Dataset verified: $FINAL_DATASET"
+echo ""
 
 # Run training
 echo "Running: llamafactory-cli train $CONFIG_FILE"

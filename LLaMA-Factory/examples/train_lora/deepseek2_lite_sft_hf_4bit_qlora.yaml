@@ -19,7 +19,7 @@ lora_rank: 8
 lora_target: all
 
 ### dataset
-dataset: identity_sean  # Identity + Current Date instruction following
+dataset: ""  # Must be provided via --dataset flag when running training script
 template: deepseek
 cutoff_len: 2048
 max_samples: 100000
@@ -58,7 +58,7 @@ gradient_checkpointing: true  # Enable gradient checkpointing to save memory
 # This will produce adapters in standard HuggingFace format (no conversion needed!)
 
 ### eval
-eval_dataset: identity_sean
+eval_dataset: ""  # Will be set automatically to match dataset when --dataset is provided
 per_device_eval_batch_size: 1
 eval_strategy: steps
 eval_steps: 5  # More frequent evaluation to catch overfitting early (every 5 steps)

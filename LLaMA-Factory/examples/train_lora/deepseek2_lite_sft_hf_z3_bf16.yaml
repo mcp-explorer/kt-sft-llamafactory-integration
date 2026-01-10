@@ -21,7 +21,7 @@ lora_rank: 8
 lora_target: all
 
 ### dataset
-dataset: identity_sean  # Identity + Current Date instruction following
+dataset: ""  # Must be provided via --dataset flag when running training script
 template: deepseek
 cutoff_len: 2048
 max_samples: 100000
@@ -41,8 +41,8 @@ report_to: wandb
 ### train
 per_device_train_batch_size: 1  # Further reduced to avoid OOM during model loading
 gradient_accumulation_steps: 32  # Increased to maintain effective batch size = 1*32=32
-learning_rate: 5.0e-3
-num_train_epochs: 40.0
+learning_rate: 5.0e-5
+num_train_epochs: 4.0
 lr_scheduler_type: linear
 warmup_ratio: 0.03
 bf16: true
@@ -50,21 +50,21 @@ ddp_timeout: 180000000
 resume_from_checkpoint: null
 gradient_checkpointing: true  # Enable gradient checkpointing to save memory
 
-# DeepSpeed ZeRO-3 with CPU offload
-# This will offload optimizer states and model parameters to CPU
-# Enables full-precision training with reduced GPU memory usage
-# GPU VRAM during training: ~3-6 GB (after initialization)
-# CPU RAM: ~28 GB (base model offloaded)
-# Note: Requires 32GB+ GPU for initialization (~28-30 GB one-time)
-deepspeed: examples/deepspeed/ds_z3_offload_config.json
+# DeepSpeed ZeRO-3 with Hybrid Offload (Parameters on GPU, Optimizer on CPU)
+# This keeps model parameters on GPU (fast) while offloading optimizer states to CPU (saves memory)
+# Enables full-precision training with balanced speed and memory usage
+# GPU VRAM during training: ~3-5 GB (LoRA training)
+# CPU RAM: ~28-35 GB (base model + LoRA optimizer)
+# Performance: ~20-30% faster than full CPU offload
+deepspeed: examples/deepspeed/ds_z3_hybrid_config.json
 
 ### HuggingFace backend (no use_kt)
 # When use_kt is not set or false, LLaMA-Factory uses standard HuggingFace PEFT
 # This will produce adapters in standard HuggingFace format (no conversion needed!)
 
 ### eval
-eval_dataset: identity_sean
+eval_dataset: ""  # Will be set automatically to match dataset when --dataset is provided
 per_device_eval_batch_size: 1
 eval_strategy: steps
-eval_steps: 17
+eval_steps: 10
 

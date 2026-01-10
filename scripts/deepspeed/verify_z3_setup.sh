@@ -82,7 +82,7 @@ echo -e "${YELLOW}[4/8] Checking documentation...${NC}"
 # Check DeepSpeed config
 echo -e "${YELLOW}[5/8] Checking DeepSpeed configuration...${NC}"
 [ -f "$PROJECT_ROOT/LLaMA-Factory/examples/deepspeed/ds_z3_offload_config.json" ] && check "ds_z3_offload_config.json exists" || check "ds_z3_offload_config.json exists"
-[ -f "$PROJECT_ROOT/LLaMA-Factory/examples/train_lora/deepseek2_lite_sft_hf_z3_test.yaml" ] && check "Test config exists" || check "Test config exists"
+[ -f "$PROJECT_ROOT/LLaMA-Factory/examples/train_lora/deepseek2_lite_sft_hf_z3_bf16.yaml" ] && check "ZeRO-3 config exists" || fail "ZeRO-3 config missing"
 
 # Check patch status
 echo -e "${YELLOW}[6/8] Checking patch status...${NC}"

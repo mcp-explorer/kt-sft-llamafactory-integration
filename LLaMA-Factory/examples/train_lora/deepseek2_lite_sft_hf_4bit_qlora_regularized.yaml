@@ -22,7 +22,7 @@ lora_target: all
 lora_dropout: 0.1  # ADDED: Dropout regularization to prevent overfitting (0.0 = no dropout, 0.1 = 10% dropout)
 
 ### dataset
-dataset: identity_sean_diverse  # Diverse identity questions and answers
+dataset: ""  # Must be provided via --dataset flag when running training script
 template: deepseek
 cutoff_len: 2048
 max_samples: 100000
@@ -67,7 +67,7 @@ max_grad_norm: 1.0  # ADDED: Gradient clipping to prevent large updates
 # This will produce adapters in standard HuggingFace format (no conversion needed!)
 
 ### eval
-eval_dataset: identity_sean_diverse
+eval_dataset: ""  # Will be set automatically to match dataset when --dataset is provided
 per_device_eval_batch_size: 1
 eval_strategy: steps
 eval_steps: 3  # Very frequent evaluation to catch overfitting immediately

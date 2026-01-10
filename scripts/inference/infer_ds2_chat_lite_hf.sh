@@ -104,7 +104,7 @@ if [ -d "$PROJECT_ROOT/LLaMA-Factory/saves/Kllama_deepseekV2Lite_hf_trained" ]; 
 elif [ -d "$PROJECT_ROOT/saves/Kllama_deepseekV2Lite_hf_trained" ]; then
     ADAPTER_BASE="$PROJECT_ROOT/saves/Kllama_deepseekV2Lite_hf_trained"
 else
-    ADAPTER_BASE="$PROJECT_ROOT/LLaMA-Factory/saves/Kllama_deepseekV2Lite_hf_trained"
+ADAPTER_BASE="$PROJECT_ROOT/LLaMA-Factory/saves/Kllama_deepseekV2Lite_hf_trained"
 fi
 if [ -n "$CHECKPOINT" ]; then
     ADAPTER_PATH="$ADAPTER_BASE/checkpoint-$CHECKPOINT"
