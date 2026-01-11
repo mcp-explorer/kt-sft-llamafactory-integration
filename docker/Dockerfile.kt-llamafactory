@@ -1,0 +1,125 @@
+# ktransformers v0.5.0 + LLaMA-Factory Docker image for SFT + Inference
+# Optimized for: Intel i9-14900KF (AVX2) + RTX 4080 SUPER (SM 8.9)
+#
+# Build: docker build -f Dockerfile.kt-llamafactory -t kt-llamafactory:latest ..
+# Run:   docker run --gpus all -it kt-llamafactory:latest bash
+
+FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel
+
+# Build arguments
+ARG CPU_INSTRUCT=NATIVE
+ARG CUDA_ARCH="8.9"
+ARG MAX_JOBS=16
+ARG KT_VERSION=v0.5.0
+
+# Environment
+ENV CUDA_HOME=/usr/local/cuda
+ENV MAX_JOBS=${MAX_JOBS}
+ENV DEBIAN_FRONTEND=noninteractive
+ENV KTRANSFORMERS_FORCE_BUILD=TRUE
+
+WORKDIR /workspace
+
+# Install system dependencies
+RUN apt update -y && apt install -y --no-install-recommends \
+    libtbb-dev \
+    libssl-dev \
+    libcurl4-openssl-dev \
+    libaio1 \
+    libaio-dev \
+    libfmt-dev \
+    libgflags-dev \
+    zlib1g-dev \
+    patchelf \
+    git \
+    wget \
+    vim \
+    gcc \
+    g++ \
+    cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip and install build dependencies
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir \
+    ninja \
+    pyproject \
+    numpy \
+    cpufeature \
+    aiohttp \
+    zmq \
+    openai \
+    packaging \
+    wheel \
+    setuptools
+
+# Install flash-attn
+RUN pip install --no-cache-dir flash-attn==2.7.4.post1 --no-build-isolation
+
+# Clone ktransformers at specific version
+RUN git clone https://github.com/kvcache-ai/ktransformers.git /workspace/ktransformers && \
+    cd /workspace/ktransformers && \
+    git checkout ${KT_VERSION} && \
+    git submodule update --init --recursive
+
+# v0.5.0 has modular structure: kt-sft/ contains the SFT framework
+WORKDIR /workspace/ktransformers/kt-sft
+
+# Verify pyproject.toml exists
+RUN ls -la pyproject.toml || (echo "ERROR: pyproject.toml not found" && exit 1)
+
+# Build ktransformers (kt-sft) from source
+# CPU_INSTRUCT=NATIVE auto-detects AVX2 for i9-14900KF
+# CUDA_ARCH=8.9 for RTX 4080 SUPER
+RUN CPU_INSTRUCT=${CPU_INSTRUCT} \
+    USE_BALANCE_SERVE=1 \
+    KTRANSFORMERS_FORCE_BUILD=TRUE \
+    TORCH_CUDA_ARCH_LIST="${CUDA_ARCH}" \
+    pip install . --no-build-isolation --verbose
+
+# Build custom flashinfer (optional - falls back to triton if fails)
+WORKDIR /workspace/ktransformers
+RUN pip install --no-cache-dir third_party/custom_flashinfer/ || \
+    echo "custom_flashinfer build failed, will use triton attention backend"
+
+# Clone and install LLaMA-Factory
+RUN git clone https://github.com/hiyouga/LLaMA-Factory.git /workspace/LLaMA-Factory && \
+    cd /workspace/LLaMA-Factory && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir -e ".[metrics]" --no-build-isolation
+
+# Install additional packages
+RUN pip install --no-cache-dir \
+    wandb \
+    tensorboard \
+    deepspeed \
+    bitsandbytes \
+    scipy
+
+# Copy optimize rules (now in kt-sft/ktransformers/)
+RUN mkdir -p /workspace/optimize_rules && \
+    cp -r /workspace/ktransformers/kt-sft/ktransformers/optimize/optimize_rules/* /workspace/optimize_rules/
+
+# Fix libstdc++ if needed
+RUN cp /usr/lib/x86_64-linux-gnu/libstdc++.so.6 /opt/conda/lib/ 2>/dev/null || true
+
+# Clean up
+RUN pip cache purge && \
+    rm -rf /workspace/ktransformers/.git && \
+    rm -rf /root/.cache/*
+
+# Set working directory
+WORKDIR /workspace/LLaMA-Factory
+
+# Create inference config for ktransformers
+RUN mkdir -p examples/inference && \
+    echo 'model_name_or_path: /workspace/models/deepseek-ai/DeepSeek-V2-Lite-Chat' > examples/inference/deepseek2_lite_kt.yaml && \
+    echo 'template: deepseek' >> examples/inference/deepseek2_lite_kt.yaml && \
+    echo 'trust_remote_code: true' >> examples/inference/deepseek2_lite_kt.yaml && \
+    echo 'infer_backend: ktransformers' >> examples/inference/deepseek2_lite_kt.yaml && \
+    echo 'kt_optimize_rule: /workspace/optimize_rules/DeepSeek-V2-Lite-Chat-sft.yaml' >> examples/inference/deepseek2_lite_kt.yaml && \
+    echo 'cpu_infer: 32' >> examples/inference/deepseek2_lite_kt.yaml
+
+EXPOSE 7860 8000
+
+CMD ["/bin/bash"]

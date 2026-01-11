@@ -1,0 +1,54 @@
+### Docker container config for ktransformers SFT training
+### Run inside container: llamafactory-cli train examples/train_lora/deepseek2_lite_sft_kt_docker.yaml
+
+### model (container path)
+model_name_or_path: /workspace/models/deepseek-ai/DeepSeek-V2-Lite-Chat
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 8
+lora_target: all
+
+### dataset
+dataset: identity_sean
+template: deepseek
+cutoff_len: 2048
+max_samples: 100000
+overwrite_cache: true
+preprocessing_num_workers: 16
+dataloader_num_workers: 8
+
+### output
+output_dir: saves/Kllama_deepseekV2Lite_docker
+logging_steps: 1
+save_steps: 10
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+report_to: wandb
+
+### train
+per_device_train_batch_size: 32
+gradient_accumulation_steps: 1
+learning_rate: 5.0e-3
+num_train_epochs: 40.0
+lr_scheduler_type: linear
+warmup_ratio: 0.03
+bf16: true
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+
+### ktransformers (container paths)
+use_kt: true
+kt_optimize_rule: /workspace/optimize_rules/DeepSeek-V2-Lite-Chat-sft.yaml
+cpu_infer: 32
+chunk_size: 4096
+
+### eval
+eval_dataset: identity_sean
+per_device_eval_batch_size: 1
+eval_strategy: steps
+eval_steps: 17

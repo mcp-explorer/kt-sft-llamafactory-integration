@@ -1,0 +1,53 @@
+version: "3.8"
+
+services:
+  kt-llamafactory:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.kt-llamafactory
+      args:
+        CPU_INSTRUCT: NATIVE      # Auto-detect AVX2 for i9-14900KF
+        CUDA_ARCH: "8.9"          # RTX 4080 SUPER
+        MAX_JOBS: 16
+        KT_VERSION: v0.5.0        # Latest ktransformers
+    image: kt-llamafactory:v0.5.0
+    container_name: kt-llamafactory
+
+    # GPU access
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # Mount volumes
+    volumes:
+      # LLaMA-Factory configs and data
+      - ../LLaMA-Factory/examples:/workspace/LLaMA-Factory/examples
+      - ../LLaMA-Factory/data:/workspace/LLaMA-Factory/data
+      - ../LLaMA-Factory/saves:/workspace/LLaMA-Factory/saves
+
+      # Model weights
+      - ../deepseek-ai:/workspace/models/deepseek-ai:ro
+
+      # HuggingFace cache
+      - ~/.cache/huggingface:/root/.cache/huggingface
+
+    # Environment
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - WANDB_API_KEY=${WANDB_API_KEY:-}
+      - HF_TOKEN=${HF_TOKEN:-}
+
+    stdin_open: true
+    tty: true
+    working_dir: /workspace/LLaMA-Factory
+
+    ports:
+      - "7860:7860"
+      - "8000:8000"
+
+    shm_size: "16gb"
+    restart: unless-stopped

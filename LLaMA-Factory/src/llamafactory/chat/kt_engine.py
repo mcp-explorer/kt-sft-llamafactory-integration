@@ -112,8 +112,15 @@ class KTransformersEngine(BaseEngine):
         tools: Optional[str] = None,
         **input_kwargs,
     ) -> AsyncGenerator[str, None]:
-        paired = messages + [{"role": "assistant", "content": ""}]
-        prompt_ids, _ = self.template.encode_oneturn(self.tokenizer, paired, system, tools)
+        # Use tokenizer's native apply_chat_template for correct prompt formatting
+        # This matches how ktransformers local_chat.py builds prompts
+        if system:
+            chat_messages = [{"role": "system", "content": system}] + messages
+        else:
+            chat_messages = messages
+        prompt_ids = self.tokenizer.apply_chat_template(
+            chat_messages, add_generation_prompt=True, tokenize=True
+        )
         prompt_len = len(prompt_ids)
 
         max_length: Optional[int] = input_kwargs.pop("max_length", None)
@@ -238,8 +245,13 @@ class KTransformersEngine(BaseEngine):
                 if delta:
                     final_text += delta
 
-            prompt_ids, _ = self.template.encode_oneturn(
-                self.tokenizer, messages + [{"role": "assistant", "content": ""}], system, tools
+            # Use tokenizer's native apply_chat_template for consistent prompt length calculation
+            if system:
+                chat_messages = [{"role": "system", "content": system}] + messages
+            else:
+                chat_messages = messages
+            prompt_ids = self.tokenizer.apply_chat_template(
+                chat_messages, add_generation_prompt=True, tokenize=True
             )
             return [
                 Response(

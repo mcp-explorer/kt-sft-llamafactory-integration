@@ -191,8 +191,8 @@ if conda env list | grep -q "^${CONDA_ENV} "; then
                 export LD_LIBRARY_PATH=$PYTORCH_NV_LIB/nvjitlink/lib:$LD_LIBRARY_PATH
             fi
             
-            # Then add system libraries for linking
-            export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
+            # Add system libraries ONLY for linking (LIBRARY_PATH), NOT for runtime (LD_LIBRARY_PATH)
+            # Adding to LD_LIBRARY_PATH causes conflicts with PyTorch's bundled CUDA libraries
             export LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LIBRARY_PATH
             
             # Also add PyTorch's library paths for linking
@@ -646,7 +646,14 @@ echo "Running: llamafactory-cli train $CONFIG_FILE"
 echo ""
 
 if [ "$DEEPSPEED_ENABLED" = true ]; then
-    conda run -n "$CONDA_ENV" env FORCE_TORCHRUN=1 llamafactory-cli train "$CONFIG_FILE"
+    # Pass library paths explicitly to conda run for CPU Adam compilation
+    # Note: conda run doesn't support env vars directly, so we use env command
+    conda run -n "$CONDA_ENV" bash -c "export FORCE_TORCHRUN=1 && \
+        export LD_LIBRARY_PATH=\"$LD_LIBRARY_PATH\" && \
+        export LIBRARY_PATH=\"$LIBRARY_PATH\" && \
+        export CUDA_HOME=\"$CUDA_HOME\" && \
+        export CUDA_ROOT=\"$CUDA_ROOT\" && \
+        llamafactory-cli train \"$CONFIG_FILE\""
 else
     conda run -n "$CONDA_ENV" llamafactory-cli train "$CONFIG_FILE"
 fi

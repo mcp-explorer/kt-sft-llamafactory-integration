@@ -1,0 +1,11 @@
+### Docker container config for ktransformers inference
+### Run inside container: llamafactory-cli chat examples/inference/deepseek2_lite_inference_kt_docker.yaml
+
+model_name_or_path: /workspace/models/deepseek-ai/DeepSeek-V2-Lite-Chat
+template: deepseek
+trust_remote_code: true
+
+### ktransformers settings (container paths)
+infer_backend: ktransformers
+kt_optimize_rule: /workspace/optimize_rules/DeepSeek-V2-Lite-Chat-sft.yaml
+cpu_infer: 32

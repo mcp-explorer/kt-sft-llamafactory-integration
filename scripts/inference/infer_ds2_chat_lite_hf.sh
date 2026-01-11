@@ -40,7 +40,9 @@ echo "Mode: $MODE"
 echo ""
 
 # Activate conda environment
-CONDA_ENV="Kllama"
+# Try deepspeed-z3 first, fallback to Kllama if deepspeed-z3 has issues
+CONDA_ENV="deepspeed-z3"
+FALLBACK_ENV="Kllama"
 
 # Initialize conda for bash shell
 if [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
@@ -62,10 +64,15 @@ fi
 # Activate the conda environment
 echo "Activating conda environment: $CONDA_ENV"
 if ! conda activate "$CONDA_ENV"; then
+    echo "⚠ Warning: Failed to activate conda environment '$CONDA_ENV'"
+    echo "Trying fallback environment: $FALLBACK_ENV"
+    CONDA_ENV="$FALLBACK_ENV"
+if ! conda activate "$CONDA_ENV"; then
     echo "Error: Failed to activate conda environment '$CONDA_ENV'"
-    echo "Please ensure the environment exists. Create it with:"
-    echo "  conda create -n $CONDA_ENV python=3.12"
+        echo "Please ensure at least one environment exists: deepspeed-z3 or Kllama"
     exit 1
+    fi
+    echo "✓ Using fallback environment: $CONDA_ENV"
 fi
 
 # Verify the environment is activated
@@ -98,13 +105,15 @@ if [ ! -f "$INFERENCE_CONFIG" ]; then
 fi
 
 # Determine adapter path (checkpoint or final)
-# Check both possible locations (LLaMA-Factory/saves/ and project root saves/)
-if [ -d "$PROJECT_ROOT/LLaMA-Factory/saves/Kllama_deepseekV2Lite_hf_trained" ]; then
-    ADAPTER_BASE="$PROJECT_ROOT/LLaMA-Factory/saves/Kllama_deepseekV2Lite_hf_trained"
+# Check multiple possible locations
+if [ -d "$PROJECT_ROOT/LLaMA-Factory/saves/Kllama_deepseekV2Lite_hf_z3_regularized" ]; then
+    ADAPTER_BASE="$PROJECT_ROOT/LLaMA-Factory/saves/Kllama_deepseekV2Lite_hf_z3_regularized"
+elif [ -d "$PROJECT_ROOT/LLaMA-Factory/saves/Kllama_deepseekV2Lite_hf_trained" ]; then
+ADAPTER_BASE="$PROJECT_ROOT/LLaMA-Factory/saves/Kllama_deepseekV2Lite_hf_trained"
 elif [ -d "$PROJECT_ROOT/saves/Kllama_deepseekV2Lite_hf_trained" ]; then
     ADAPTER_BASE="$PROJECT_ROOT/saves/Kllama_deepseekV2Lite_hf_trained"
 else
-ADAPTER_BASE="$PROJECT_ROOT/LLaMA-Factory/saves/Kllama_deepseekV2Lite_hf_trained"
+    ADAPTER_BASE="$PROJECT_ROOT/LLaMA-Factory/saves/Kllama_deepseekV2Lite_hf_z3_regularized"
 fi
 if [ -n "$CHECKPOINT" ]; then
     ADAPTER_PATH="$ADAPTER_BASE/checkpoint-$CHECKPOINT"

@@ -1,5 +1,5 @@
 model_name_or_path: /home/sean/Documents/ktransformers/deepseek-ai/DeepSeek-V2-Lite-Chat
-adapter_name_or_path: /home/sean/Documents/ktransformers/LLaMA-Factory/saves/Kllama_deepseekV2Lite_hf_z3_regularized
+adapter_name_or_path: saves/Kllama_deepseekV2Lite_hf_z3_regularized
 template: deepseek
 infer_backend: huggingface
 trust_remote_code: true

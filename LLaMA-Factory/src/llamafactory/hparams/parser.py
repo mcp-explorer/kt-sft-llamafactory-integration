@@ -196,6 +196,7 @@ def _check_extra_dependencies(
     if training_args is not None:
         if training_args.deepspeed:
             # pin deepspeed version < 0.17 because of https://github.com/deepspeedai/DeepSpeed/issues/7347
+            # NOTE: We've patched DeepSpeed 0.16.9's __setstate__ to fix CPU Adam resume issue
             check_version("deepspeed", mandatory=True)
             check_version("deepspeed>=0.10.0,<=0.16.9")
 
