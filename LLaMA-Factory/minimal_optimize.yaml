@@ -1,0 +1,15 @@
+# Minimal optimize rule - only embed_tokens replacement
+# All other layers remain as default (vanilla transformers)
+- match:
+    name: "^model.embed_tokens"
+  replace:
+    class: "default"
+    kwargs:
+      generate_device: "cuda"
+      prefill_device: "cuda"
+- match:
+    name: "^model$"
+  replace:
+    class: "ktransformers.operators.models.KDeepseekV2Model"
+    kwargs:
+      per_layer_prefill_intput_threshold: 0

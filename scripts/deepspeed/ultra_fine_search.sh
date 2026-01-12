@@ -24,6 +24,23 @@ echo ""
 BASELINE_PREFETCH=1.2e9
 BASELINE_MAX_LIVE=8e9
 
+# Function to clear GPU memory
+clear_gpu_memory() {
+    echo -e "${YELLOW}Clearing GPU memory...${NC}"
+    
+    # Kill processes in background to avoid blocking
+    (pkill -9 -f "llamafactory-cli train" 2>/dev/null; pkill -9 -f "deepspeed" 2>/dev/null; pkill -9 -f "torchrun" 2>/dev/null; pkill -9 -f "python.*train" 2>/dev/null) &
+    
+    # Wait a bit for cleanup
+    sleep 2
+    
+    # Check GPU memory
+    local current_mem
+    current_mem=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1 || echo "0")
+    echo -e "${GREEN}GPU memory: ${current_mem} MB${NC}"
+    echo ""
+}
+
 # Function to update config
 update_config() {
     local prefetch=$1
@@ -144,6 +161,8 @@ PREFETCH_TESTS=(
 )
 
 for test_prefetch in "${PREFETCH_TESTS[@]}"; do
+    clear_gpu_memory
+    
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}Testing Prefetch: $test_prefetch${NC}"
     echo ""
@@ -158,7 +177,6 @@ for test_prefetch in "${PREFETCH_TESTS[@]}"; do
         fi
         echo -e "${GREEN}✓ Works! Trying next...${NC}"
         echo ""
-        sleep 3
     else
         echo -e "${RED}✗ OOM. Prefetch limit: ${OPTIMAL_PREFETCH}${NC}"
         echo ""
@@ -179,6 +197,8 @@ MAX_LIVE_TESTS=(
 )
 
 for test_max_live in "${MAX_LIVE_TESTS[@]}"; do
+    clear_gpu_memory
+    
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BLUE}Testing MaxLive: $test_max_live${NC}"
     echo ""
@@ -193,7 +213,6 @@ for test_max_live in "${MAX_LIVE_TESTS[@]}"; do
         fi
         echo -e "${GREEN}✓ Works! Trying next...${NC}"
         echo ""
-        sleep 3
     else
         echo -e "${RED}✗ OOM. MaxLive limit: ${OPTIMAL_MAX_LIVE}${NC}"
         echo ""

@@ -53,7 +53,7 @@ RUN pip install --upgrade pip && \
     wheel \
     setuptools
 
-# Install flash-attn
+# Install flash-attn with specific version
 RUN pip install --no-cache-dir flash-attn==2.7.4.post1 --no-build-isolation
 
 # Clone ktransformers at specific version
@@ -68,11 +68,20 @@ WORKDIR /workspace/ktransformers/kt-sft
 # Verify pyproject.toml exists
 RUN ls -la pyproject.toml || (echo "ERROR: pyproject.toml not found" && exit 1)
 
+# Patch the setup.py to handle flash-attn version detection issue
+# The get_flash_version() method fails when version_match regex returns None
+RUN python -c "import re; f=open('setup.py','r'); c=f.read(); f.close(); c=c.replace('flash_version = ast.literal_eval(version_match.group(1))', 'flash_version = __import__(\"flash_attn\").__version__ if version_match is None else ast.literal_eval(version_match.group(1))'); f=open('setup.py','w'); f.write(c); f.close(); print('Patched setup.py')"
+
+# Fix pyproject.toml license field format for modern setuptools
+RUN sed -i 's/^license = "Apache-2.0"/license = {text = "Apache-2.0"}/' pyproject.toml && \
+    grep -q 'license-files' pyproject.toml && sed -i '/license-files/d' pyproject.toml || true
+
 # Build ktransformers (kt-sft) from source
 # CPU_INSTRUCT=NATIVE auto-detects AVX2 for i9-14900KF
 # CUDA_ARCH=8.9 for RTX 4080 SUPER
+# Note: USE_BALANCE_SERVE disabled - submodule incomplete in v0.5.0
 RUN CPU_INSTRUCT=${CPU_INSTRUCT} \
-    USE_BALANCE_SERVE=1 \
+    USE_BALANCE_SERVE=0 \
     KTRANSFORMERS_FORCE_BUILD=TRUE \
     TORCH_CUDA_ARCH_LIST="${CUDA_ARCH}" \
     pip install . --no-build-isolation --verbose
@@ -82,10 +91,17 @@ WORKDIR /workspace/ktransformers
 RUN pip install --no-cache-dir third_party/custom_flashinfer/ || \
     echo "custom_flashinfer build failed, will use triton attention backend"
 
+# Fix ktransformers version import issue - create version.py in the package directory
+RUN echo '__version__ = "0.5.0"' > /opt/conda/lib/python3.11/site-packages/ktransformers/version.py && \
+    sed -i "s|from version import __version__|from ktransformers.version import __version__|g" \
+    /opt/conda/lib/python3.11/site-packages/ktransformers/__init__.py
+
+# Install hatchling and editables (required for LLaMA-Factory build)
+RUN pip install --no-cache-dir hatchling hatch-vcs editables
+
 # Clone and install LLaMA-Factory
 RUN git clone https://github.com/hiyouga/LLaMA-Factory.git /workspace/LLaMA-Factory && \
     cd /workspace/LLaMA-Factory && \
-    pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir -e ".[metrics]" --no-build-isolation
 
 # Install additional packages

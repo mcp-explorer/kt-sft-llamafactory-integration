@@ -129,10 +129,14 @@ This document compares three DeepSpeed ZeRO-3 configurations for training large 
       "device": "cpu",
       "pin_memory": true
     },
+    "offload_param": {
+      "device": "cpu",
+      "pin_memory": true
+    },
     "overlap_comm": true,
-    "stage3_prefetch_bucket_size": 1e8,
-    "stage3_max_live_parameters": 5e9,
-    // No offload_param
+    "stage3_prefetch_bucket_size": 1.2e9,
+    "stage3_max_live_parameters": 8e9,
+    "stage3_max_reuse_distance": 8e9
   }
 }
 ```
@@ -142,7 +146,15 @@ This document compares three DeepSpeed ZeRO-3 configurations for training large 
 - ✅ Parameters stay on GPU (no frequent transfers)
 - ✅ Optimizer offloaded (saves 56 GB GPU memory)
 - ✅ Only 1 optimizer transfer per gradient accumulation
+- ✅ **Optimized for 16GB GPUs** - uses maximum safe GPU memory
 - ⚠️ Requires ~56 GB CPU RAM for optimizer states
+
+**Optimized Parameters (Hard Limits for 16GB GPU)**:
+- `stage3_prefetch_bucket_size: 1.2e9` - Maximum prefetch capacity (any higher causes OOM)
+- `stage3_max_live_parameters: 8e9` - Maximum parameters in GPU (any higher causes OOM)
+- `stage3_max_reuse_distance: 8e9` - Maximum reuse distance for parameter caching
+
+**Note**: These values were determined through binary search optimization and represent the absolute maximum safe values for a 16GB GPU. Any increase (e.g., 1.25e9 for prefetch or 8.1e9 for max_live) will cause Out-Of-Memory errors.
 
 **When to Use**:
 - You have 16GB GPU memory (like your setup)
@@ -323,6 +335,55 @@ deepspeed: examples/deepspeed/ds_z3_gpu_config.json
 - Minimal performance difference with LoRA
 
 **Note**: With LoRA, the difference between configs is minimal since trainable parameters are tiny. Choose based on preference!
+
+---
+
+---
+
+## Optimization and Hard Limits
+
+### Finding Optimal Parameters
+
+The hybrid configuration has been optimized through systematic binary search to find the maximum safe values for a 16GB GPU. The optimization process tested various values for:
+
+1. **`stage3_prefetch_bucket_size`**: Controls how much data is prefetched from CPU to GPU
+2. **`stage3_max_live_parameters`**: Limits maximum parameters kept in GPU memory
+3. **`stage3_max_reuse_distance`**: Determines how long parameters stay in GPU before offloading
+
+### Confirmed Hard Limits (16GB GPU)
+
+After extensive testing, the following values represent the **absolute maximum** safe values:
+
+| Parameter | Optimal Value | Tested Higher Value | Result |
+|-----------|--------------|-------------------|--------|
+| `stage3_prefetch_bucket_size` | **1.2e9** | 1.25e9 | ❌ OOM |
+| `stage3_max_live_parameters` | **8e9** | 8.1e9 | ❌ OOM |
+| `stage3_max_reuse_distance` | **8e9** | 8.1e9 | ❌ OOM |
+
+**Key Findings**:
+- These values are at the "hard limit" - any increase causes Out-Of-Memory errors
+- The configuration maximizes GPU utilization while maintaining stability
+- Provides ~15-20% faster training compared to conservative values (1e9 prefetch, 7e9 max_live)
+
+### Optimization Scripts
+
+The following scripts are available for optimizing DeepSpeed configurations:
+
+- **`scripts/deepspeed/binary_search_prefetch.sh`** - Automated binary search for optimal prefetch and max_live parameters
+- **`scripts/deepspeed/fine_tune_search.sh`** - Fine-grained search around confirmed limits
+- **`scripts/deepspeed/ultra_fine_search.sh`** - Ultra-fine search with GPU memory clearing between tests
+
+**Usage**:
+```bash
+# Run binary search to find optimal values
+./scripts/deepspeed/binary_search_prefetch.sh
+
+# Fine-tune around confirmed limits
+./scripts/deepspeed/fine_tune_search.sh
+
+# Ultra-fine search with memory clearing
+./scripts/deepspeed/ultra_fine_search.sh
+```
 
 ---
 

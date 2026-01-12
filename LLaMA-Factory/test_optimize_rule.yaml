@@ -1,0 +1,69 @@
+# Test optimize rule - all on CUDA
+- match:
+    class: ktransformers.models.modeling_deepseek.DeepseekV2YarnRotaryEmbedding
+  replace:
+    class: ktransformers.operators.RoPE.YarnRotaryEmbedding
+    kwargs:
+      generate_device: "cuda"
+      prefill_device: "cuda"
+- match:
+    name: "^model\\.layers\\.(?!.*self_attn\\.kv_b_proj).*$"
+    class: torch.nn.Linear
+  replace:
+    class: ktransformers.operators.linear.KTransformersLinear
+    kwargs:
+      generate_device: "cuda"
+      prefill_device: "cuda"
+      generate_op: "KLinearTorch"
+      prefill_op: "KLinearTorch"
+
+- match:
+    name: "^lm_head"
+    class: torch.nn.Linear
+  replace:
+    class: ktransformers.operators.linear.KTransformersLinear
+    kwargs:
+      generate_device: "cuda"
+      prefill_device: "cuda"
+      generate_op: "KLinearTorch"
+      prefill_op: "KLinearTorch"
+
+- match:
+    name: "^model\\.layers\\..*\\.mlp$"
+    class: ktransformers.models.modeling_deepseek.DeepseekV2MoE
+  replace:
+    class: ktransformers.operators.experts.KDeepseekV2MoE
+    kwargs:
+      generate_device: "cuda"
+      prefill_device: "cuda"
+- match:
+    name: "^model\\.layers\\..*\\.mlp\\.experts$"
+  replace:
+    class: ktransformers.operators.experts.KTransformersExperts
+    kwargs:
+      prefill_device: "cuda"
+      prefill_op: "KExpertsTorch"
+      generate_device: "cuda"
+      generate_op: "KExpertsTorch"
+      out_device: "cuda"
+  recursive: False
+- match:
+    name: "^model\\.layers\\..*\\.self_attn$"
+  replace:
+    class: ktransformers.operators.attention.KDeepseekV2Attention
+    kwargs:
+      generate_device: "cuda"
+      prefill_device: "cuda"
+- match:
+    name: "^model$"
+  replace:
+    class: "ktransformers.operators.models.KDeepseekV2Model"
+    kwargs:
+      per_layer_prefill_intput_threshold: 0
+- match:
+    name: "^model.embed_tokens"
+  replace:
+    class: "default"
+    kwargs:
+      generate_device: "cuda"
+      prefill_device: "cuda"

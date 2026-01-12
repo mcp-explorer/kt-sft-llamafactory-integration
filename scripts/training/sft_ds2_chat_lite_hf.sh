@@ -557,6 +557,27 @@ echo "Starting training..."
 echo "=========================================="
 echo ""
 
+# Check for existing training processes and kill them
+echo "Checking for existing training processes..."
+EXISTING_PIDS=$(pgrep -f "llamafactory-cli train" || true)
+if [ -n "$EXISTING_PIDS" ]; then
+    echo "⚠ Warning: Found existing training processes: $EXISTING_PIDS"
+    echo "  Killing existing processes to prevent conflicts..."
+    pkill -f "llamafactory-cli train" || true
+    sleep 2
+    # Double check
+    REMAINING=$(pgrep -f "llamafactory-cli train" || true)
+    if [ -n "$REMAINING" ]; then
+        echo "  Force killing remaining processes..."
+        pkill -9 -f "llamafactory-cli train" || true
+        sleep 1
+    fi
+    echo "✓ Cleared existing training processes"
+else
+    echo "✓ No existing training processes found"
+fi
+echo ""
+
 # Set memory management environment variables to help with OOM
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export CUDA_LAUNCH_BLOCKING=0

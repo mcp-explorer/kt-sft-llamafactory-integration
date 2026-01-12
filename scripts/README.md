@@ -45,8 +45,9 @@ scripts/
 │   └── convert_to_llamafactory.sh  # Convert JSONL to LLaMA-Factory format + register
 │
 ├── deepspeed/         # DeepSpeed ZeRO-3 CPU Offload scripts
-│   ├── setup_deepspeed_z3_env.sh   # Set up DeepSpeed environment
-│   ├── activate_deepspeed_z3.sh    # Activate DeepSpeed environment
+│   ├── fix_deepspeed_cpu_offload.sh # Main fix script (all issues)
+│   ├── fix_cpu_adam_header.sh      # Fix C++ header (requires sudo)
+│   ├── rebuild_deepspeed_z3_env.sh # Rebuild conda environment
 │   ├── test_deepspeed_cpu_adam.sh  # Test CPU Adam compilation
 │   └── ... (see deepspeed/README.md for full list)
 │
@@ -157,8 +158,13 @@ scripts/
 ## DeepSpeed ZeRO-3 CPU Offload
 
 For DeepSpeed ZeRO-3 CPU offload setup and usage, see:
-- [`deepspeed/README.md`](deepspeed/README.md)
-- [`docs/deepspeed_cpu_offload_issues.md`](../docs/deepspeed_cpu_offload_issues.md)
+- [`deepspeed/README.md`](deepspeed/README.md) - Complete script reference
+- [`../docs/DEEPSPEED_CPU_OFFLOAD_FIXES.md`](../docs/DEEPSPEED_CPU_OFFLOAD_FIXES.md) - Complete fix guide
+
+**Quick Fix**: If you encounter issues, run:
+```bash
+./scripts/deepspeed/fix_deepspeed_cpu_offload.sh
+```
 
 ## Documentation
 

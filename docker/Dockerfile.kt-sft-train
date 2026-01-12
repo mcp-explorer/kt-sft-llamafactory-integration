@@ -1,0 +1,79 @@
+FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel
+
+ARG CUDA_ARCH=8.9
+
+WORKDIR /workspace
+
+# Install system dependencies
+RUN apt update -y && apt install -y --no-install-recommends \
+    libtbb-dev \
+    libssl-dev \
+    libcurl4-openssl-dev \
+    libaio1 \
+    libaio-dev \
+    libfmt-dev \
+    libgflags-dev \
+    zlib1g-dev \
+    patchelf \
+    git \
+    wget \
+    vim \
+    gcc \
+    g++ \
+    cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir \
+    ninja \
+    pyproject \
+    numpy \
+    cpufeature \
+    aiohttp \
+    zmq \
+    openai \
+    packaging \
+    wheel \
+    setuptools
+
+# Install flash-attn
+RUN pip install --no-cache-dir flash-attn==2.7.4.post1 --no-build-isolation
+
+# Copy kt-sft source
+COPY kt-sft /workspace/ktransformers
+
+WORKDIR /workspace/ktransformers
+
+# Fix pyproject.toml license format
+RUN sed -i 's/^license = "Apache-2.0"/license = {text = "Apache-2.0"}/' pyproject.toml && \
+    grep -q 'license-files' pyproject.toml && sed -i '/license-files/d' pyproject.toml || true
+
+# Build and install kt-sft with CUDA
+RUN CPU_INSTRUCT=NATIVE \
+    USE_BALANCE_SERVE=0 \
+    KTRANSFORMERS_FORCE_BUILD=TRUE \
+    TORCH_CUDA_ARCH_LIST="${CUDA_ARCH}" \
+    pip install . --no-build-isolation --verbose
+
+# Create version.py
+RUN echo '__version__ = "0.4.1"' > /opt/conda/lib/python3.11/site-packages/ktransformers/version.py && \
+    sed -i "s|from version import __version__|from ktransformers.version import __version__|g" \
+    /opt/conda/lib/python3.11/site-packages/ktransformers/__init__.py || true
+
+# Install hatchling and editables (required for LLaMA-Factory build)
+RUN pip install --no-cache-dir hatchling hatch-vcs editables
+
+# Clone and install LLaMA-Factory
+RUN git clone https://github.com/hiyouga/LLaMA-Factory.git /workspace/LLaMA-Factory && \
+    cd /workspace/LLaMA-Factory && \
+    pip install --no-cache-dir -e ".[metrics]" --no-build-isolation
+
+# Copy local LLaMA-Factory modifications
+COPY LLaMA-Factory/src/llamafactory/chat/kt_engine.py /workspace/LLaMA-Factory/src/llamafactory/chat/kt_engine.py
+
+WORKDIR /workspace/LLaMA-Factory
+
+EXPOSE 7860 8000
+
+CMD ["/bin/bash"]
