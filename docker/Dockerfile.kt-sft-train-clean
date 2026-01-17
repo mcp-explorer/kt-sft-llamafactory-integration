@@ -1,0 +1,48 @@
+FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel
+
+ARG CUDA_ARCH=8.9
+
+WORKDIR /workspace
+
+# Build kt-sft
+COPY kt-sft /workspace/ktransformers/kt-sft
+
+# Install ktransformers
+WORKDIR /workspace/ktransformers/kt-sft
+RUN pip install --no-cache-dir hatchling hatch-vcs editables
+RUN pip install --no-cache-dir ninja-build
+
+# Build ktransformers extensions
+WORKDIR /workspace/ktransformers/kt-sft/csrc
+RUN pip install --no-cache-dir ninja cmake packaging setuptools wheel numpy && \
+    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/torch_stable.html && \
+    pip install --no-cache-dir accelerate packaging && \
+    python setup.py build_ext --inplace && \
+    python setup.py install
+
+# Clone and install LLaMA-Factory
+RUN git clone https://github.com/hiyouga/LLaMA-Factory.git /workspace/LLaMA-Factory && \
+    cd /workspace/LLaMA-Factory && \
+    pip install --no-cache-dir -e ".[metrics]" --no-build-isolation && \
+    pip install --no-cache-dir "transformers==4.51.3" "tokenizers>=0.21,<0.22" --no-deps
+
+# Copy ALL THREE FIXES
+# Fix 1: gguf_loader AttributeError - MinimalGGUFLoader wrapper
+COPY kt-sft/ktransformers/operators/experts.py /workspace/ktransformers/kt-sft/ktransformers/operators/experts.py
+COPY kt-sft/ktransformers/util/utils.py /workspace/ktransformers/kt-sft/ktransformers/util/utils.py
+
+# Fix 2: CPU offloading - Already in utils.py
+# Fix 3: Transformers version - Already pinned in LLaMA-Factory install line above
+
+# Copy local LLaMA-Factory modifications (kt_engine.py for prompt templating)
+COPY LLaMA-Factory/src/llamafactory/chat/kt_engine.py /workspace/LLaMA-Factory/src/llamafactory/chat/kt_engine.py
+
+# Patch patcher.py to handle gen_config being None and model.generate missing __func__ (for ktransformers)
+COPY docker/patch_patcher.py /tmp/patch_patcher.py
+RUN python /tmp/patch_patcher.py
+
+WORKDIR /workspace/LLaMA-Factory
+
+EXPOSE 7860 8000
+
+CMD ["/bin/bash"]

@@ -1,0 +1,18 @@
+# Exclude build artifacts
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.egg-info
+**/build
+**/dist
+**/*.so
+
+# Keep third_party
+!kt-sft/third_party
+!kt-sft/third_party/**
+
+# Exclude other large/unneeded directories
+.git
+deepseek-ai
+*.gguf
+*.safetensors

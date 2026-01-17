@@ -1,0 +1,43 @@
+version: "3.8"
+
+services:
+  kt-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.kt-test-simple
+      args:
+        CUDA_ARCH: "8.9"
+    image: kt-test:v1-simple
+    container_name: kt-test
+
+    # GPU access
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # Mount volumes (external storage - ABSOLUTE paths!)
+    volumes:
+      # Model weights - READ ONLY (external)
+      - /home/sean/Documents/ktransformers/deepseek-ai:/workspace/models/deepseek-ai:ro
+      
+      # HuggingFace cache (external)
+      - /home/sean/.cache/huggingface:/root/.cache/huggingface
+
+    # Environment
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTHONUNBUFFERED=1
+
+    stdin_open: true
+    tty: true
+    working_dir: /workspace
+
+    ports:
+      - "8000:8000"
+
+    shm_size: "8gb"
+    restart: unless-stopped

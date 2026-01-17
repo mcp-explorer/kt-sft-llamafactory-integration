@@ -877,9 +877,10 @@ class KSFTExpertsCPU(torch.autograd.Function):
         if weights.device.type != 'cpu':
             if debug:
                 print(f"[KSFTExpertsCPU.backward] weights is on {weights.device}, moving to CPU", flush=True)
-            weights = weights.cpu().clone().contiguous()
+            weights = weights.to(torch.float32).cpu().clone().contiguous()
         else:
-            weights = weights.contiguous()
+            # Convert to float32 as C++ expects const float*
+            weights = weights.to(torch.float32).contiguous()
             
         # Create input_grad explicitly on CPU with explicit shape and dtype
         # Use pin_memory=True like the rest of the codebase to ensure C++ can access it

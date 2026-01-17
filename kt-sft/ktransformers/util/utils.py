@@ -484,12 +484,15 @@ def prefill_and_generate(model, tokenizer, inputs, max_new_tokens=10000, use_cud
         prefill_count = seq_length
         prefill_time = first_token_time
         if force_think:
-            print("<think>")
-        print(stream.put(next_token.item()), end="", flush=True)
-        # stream.put(next_token.item())
-        generated_ids[:, seq_length] = next_token
-        tokens.append(int(next_token))
-        inputs = torch.cat((inputs, next_token.unsqueeze(0)), dim=-1)
+            print("\n")
+            print(stream.put(next_token.item()), end="", flush=True)
+            print(stream.put(next_token.item()))
+        # Ensure next_token is 1D before unsqueezing to fix dimension mismatch
+        # Always squeeze to 1D to avoid dimension issues
+        next_token_squeezed = next_token.squeeze(-1)
+        generated_ids[:, seq_length] = next_token_squeezed
+        tokens.append(int(next_token.item()))
+        inputs = torch.cat((inputs, next_token_squeezed.unsqueeze(0)), dim=-1)
         cache_position = torch.tensor([seq_length], device=torch_device, dtype=torch.int32)
         position_ids = cache_position.unsqueeze(0)
         seq_length += 1
@@ -554,6 +557,15 @@ def prefill_and_generate_capture(
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     torch._dynamo.config.suppress_errors = True
     batch_size, seq_length = inputs.shape
+    # Handle both GGUF and safetensors-loaded models (fix for garbled output)
+    if hasattr(model, 'gguf_loader') and model.gguf_loader is not None:
+        device_map = model.gguf_loader.tensor_device_map
+    else:
+        # For safetensors-loaded models, scan model parameters
+        device_map = {}
+        for name, param in model.named_parameters():
+            if param.device not in device_map:
+                device_map[name] = param.device
     device_map = model.gguf_loader.tensor_device_map
     torch_device = get_device('model.layers.0.self_attn', device_map)
     torch_device = torch_device_mapping.get(torch_device, torch_device)

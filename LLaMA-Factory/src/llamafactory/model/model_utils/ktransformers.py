@@ -124,6 +124,25 @@ def get_kt_peft_model(model: "PreTrainedModel", peft_kwargs: dict[str, Any]) -> 
 def load_kt_peft_model(model_args: "ModelArguments", model: "PreTrainedModel") -> "PreTrainedModel":
     r"""Load peft model with KTransformers. Used in both training and inference."""
     load_adapter_name_or_path = model_args.adapter_name_or_path[0]
+    
+    # Ensure model.gguf_loader exists for inference (needed by prefill_and_generate_capture)
+    # If model.gguf_loader is not set (inference from safetensors), create a minimal loader
+    # that preserves existing device_map from optimize rule (CPU offloading for MoE experts)
+    if not hasattr(model, 'gguf_loader') or model.gguf_loader is None:
+        from ktransformers.util.custom_loader import GGUFLoader
+        # Create minimal GGUFLoader wrapper that only provides device_map, doesn't reload weights
+        # This preserves the CPU offloading configuration from optimize_and_load_gguf()
+        class MinimalGGUFLoader:
+            def __init__(self, model_path: str):
+                self.tensor_device_map = model.gguf_loader.tensor_device_map if hasattr(model, 'gguf_loader') else {}
+                self.tensor_file_map = {}
+                self.tensor_type_map = {}
+                self.safetensor_loader = None
+            def has_tensor(self, name: str):
+                return False
+        model.gguf_loader = MinimalGGUFLoader(model_args.model_name_or_path)
+        print(f"Created minimal GGUFLoader wrapper to preserve device_map for inference: {model_args.model_name_or_path}")
+    
     if load_adapter_name_or_path.endswith(".gguf"):
         inject_lora_layer(model, load_adapter_name_or_path)
         adapter_gguf_loader = GGUFLoader(load_adapter_name_or_path)
@@ -131,24 +150,24 @@ def load_kt_peft_model(model_args: "ModelArguments", model: "PreTrainedModel") -
         model.train()
     else:
         inject_lora_layer(model, load_adapter_name_or_path)
-
+        
         adapter_loader = SafeTensorLoader(load_adapter_name_or_path)
         device = next(model.parameters()).device
         for key in adapter_loader.tensor_file_map.keys():
             try:
                 tensor = adapter_loader.load_tensor(key, device=device)
-
+                
                 model_key = key.replace("base_model.model.", "")
                 model_key = model_key.replace(".weight", ".default.weight")
                 model_key = model_key.replace(".default.default.weight", ".default.weight")
-
+                
                 param = model.get_parameter(model_key)
                 param.data.copy_(tensor.data)
-
+                
                 print(f"Loaded adapter weight: {key} -> {model_key}")
             except AttributeError:
                 print(f"Skipping {key}: not a model parameter")
             except KeyError:
                 print(f"Key not found in model: {model_key} (original: {key})")
-
+    
     return model

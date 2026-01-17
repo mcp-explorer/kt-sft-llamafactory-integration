@@ -31,11 +31,8 @@ RUN git clone https://github.com/kvcache-ai/ktransformers.git /workspace/ktransf
     git checkout ${KT_VERSION} && \
     git submodule update --init --recursive
 
-# Copy utils.py fix BEFORE ktransformers build (to ensure kt-sft has fixed version)
+# Copy FIXED utils.py with gguf_loader and tensor dimension fixes BEFORE ktransformers build
 COPY kt-sft/ktransformers/util/utils.py /workspace/ktransformers/kt-sft/ktransformers/util/utils.py
-
-# Apply tensor dimension fix to utils.py in-place (two occurrences)
-RUN sed -i 's/next_token = torch.cat((inputs, next_token.unsqueeze(0)), dim=-1)/next_token_squeezed = next_token.squeeze(-1); generated_ids[:, seq_length] = next_token_squeezed; tokens.append(int(next_token.item())); inputs = torch.cat((inputs, next_token_squeezed.unsqueeze(0)), dim=-1)/g' /workspace/ktransformers/kt-sft/ktransformers/util/utils.py
 
 # Patch setup.py to handle flash-attn version detection issue
 RUN python -c "import re; f=open('setup.py','r'); c=f.read(); f.close(); c=c.replace('flash_version = ast.literal_eval(version_match.group(1))', 'flash_version = __import__(\"flash_attn\").__version__ if version_match is None else ast.literal_eval(version_match.group(1))'); f=open('setup.py','w'); f.write(c); f.close(); print('Patched setup.py')"
@@ -67,13 +64,9 @@ RUN git clone https://github.com/hiyouga/LLaMA-Factory.git /workspace/LLaMA-Fact
     pip install --no-cache-dir -e ".[metrics]" --no-build-isolation && \
     pip install --no-cache-dir "transformers==4.51.3" "tokenizers>=0.21,<0.22" --no-deps
 
-# Copy local LLaMA-Factory modifications (kt_engine.py for prompt templating, ktransformers.py with gguf_loader fix)
+# Copy local LLaMA-Factory modifications (kt_engine.py for prompt templating, ktransformers.py with all fixes)
 COPY LLaMA-Factory/src/llamafactory/chat/kt_engine.py /workspace/LLaMA-Factory/src/llamafactory/chat/kt_engine.py
 COPY LLaMA-Factory/src/llamafactory/model/model_utils/ktransformers.py /workspace/LLaMA-Factory/src/llamafactory/model/model_utils/ktransformers.py
-
-# Patch patcher.py to handle gen_config being None and model.generate missing __func__ (for ktransformers)
-COPY docker/patch_patcher.py /tmp/patch_patcher.py
-RUN python /tmp/patch_patcher.py
 
 WORKDIR /workspace/LLaMA-Factory
 

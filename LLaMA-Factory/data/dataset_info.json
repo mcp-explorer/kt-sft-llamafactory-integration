@@ -739,5 +739,25 @@
   },
   "identity_sean_generated": {
     "file_name": "identity_sean_generated.json"
+  },
+  "identity_sean_dpo": {
+    "file_name": "identity_sean_dpo.json",
+    "formatting": "sharegpt",
+    "ranking": true,
+    "columns": {
+      "messages": "conversations",
+      "chosen": "chosen",
+      "rejected": "rejected"
+    }
+  },
+  "identity_sean_dpo_improved": {
+    "file_name": "identity_sean_dpo_improved.json",
+    "formatting": "sharegpt",
+    "ranking": true,
+    "columns": {
+      "messages": "conversations",
+      "chosen": "chosen",
+      "rejected": "rejected"
+    }
   }
 }

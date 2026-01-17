@@ -840,10 +840,87 @@ void SFT_MOE::get_transpose(Backend* backend) {
 }
 
 void SFT_MOE::backward_one(int k, const uint64_t* expert_ids, const float* weights, const void* output_grad, void* input_grad, Backend* backend, const SFT_MoEForwardCache* fwd_cache) {
-	// clock_t clk1, clk2, clk3, clk4;
-	// clock_t clkz1, clkz2, clkz3, clkz4, clkz5;
-	// clk1 = clock();
-	// clk2 = clock();
+    // Debug: Check if KSFT_MOE_DEBUG is set
+    const char* debug_env = std::getenv("KSFT_MOE_DEBUG");
+    bool debug = (debug_env != nullptr && std::string(debug_env) == "1");
+
+    if (debug) {
+        fprintf(stderr, "[C++ backward_one] ENTER: k=%d, expert_ids=%p, weights=%p, output_grad=%p, input_grad=%p, fwd_cache=%p\n",
+                k, (const void*)expert_ids, (const void*)weights, output_grad, input_grad, (const void*)fwd_cache);
+        fflush(stderr);
+    }
+
+    // Validate pointers
+    if (expert_ids == nullptr || weights == nullptr || output_grad == nullptr || input_grad == nullptr || fwd_cache == nullptr || backend == nullptr) {
+        fprintf(stderr, "[C++ backward_one] ERROR: nullptr detected!\n");
+        fflush(stderr);
+        throw std::runtime_error("nullptr in backward_one");
+    }
+
+    // Validate internal buffers
+    if (debug) {
+        fprintf(stderr, "[C++ backward_one] Checking internal buffers...\n");
+        fprintf(stderr, "[C++ backward_one] down_proj_t_=%p, gate_proj_t_=%p, up_proj_t_=%p\n",
+                (void*)down_proj_t_, (void*)gate_proj_t_, (void*)up_proj_t_);
+        fprintf(stderr, "[C++ backward_one] s_down_input_grad_.size()=%zu, s_gate_output_grad_fp32_.size()=%zu\n",
+                s_down_input_grad_.size(), s_gate_output_grad_fp32_.size());
+        fflush(stderr);
+    }
+
+    // Check if transposed weights are initialized
+    if (down_proj_t_ == nullptr || gate_proj_t_ == nullptr || up_proj_t_ == nullptr) {
+        fprintf(stderr, "[C++ backward_one] ERROR: Transposed weights not initialized! Call get_transpose() first.\n");
+        fflush(stderr);
+        throw std::runtime_error("Transposed weights not initialized in backward_one");
+    }
+
+    // Check scratch buffer sizes
+    if (s_down_input_grad_.size() < (size_t)k || s_gate_output_grad_fp32_.size() < (size_t)k) {
+        fprintf(stderr, "[C++ backward_one] ERROR: Scratch buffer size mismatch! k=%d but buffer sizes are %zu, %zu\n",
+                k, s_down_input_grad_.size(), s_gate_output_grad_fp32_.size());
+        fflush(stderr);
+        throw std::runtime_error("Scratch buffer size mismatch in backward_one");
+    }
+
+    // Validate fwd_cache contents
+    if (debug) {
+        fprintf(stderr, "[C++ backward_one] Checking fwd_cache contents...\n");
+        fprintf(stderr, "[C++ backward_one] fwd_cache->up_v.size()=%zu, fwd_cache->gate_u.size()=%zu\n",
+                fwd_cache->up_v.size(), fwd_cache->gate_u.size());
+        fflush(stderr);
+    }
+
+    if (fwd_cache->up_v.size() < (size_t)k || fwd_cache->gate_u.size() < (size_t)k) {
+        fprintf(stderr, "[C++ backward_one] ERROR: fwd_cache vectors too small! k=%d but up_v.size()=%zu, gate_u.size()=%zu\n",
+                k, fwd_cache->up_v.size(), fwd_cache->gate_u.size());
+        fflush(stderr);
+        throw std::runtime_error("fwd_cache vectors too small in backward_one");
+    }
+
+    // Check expert_ids are valid
+    if (debug) {
+        fprintf(stderr, "[C++ backward_one] Expert IDs: ");
+        for (int i = 0; i < k; i++) {
+            fprintf(stderr, "%lu ", expert_ids[i]);
+        }
+        fprintf(stderr, "\n");
+        fflush(stderr);
+    }
+
+    for (int i = 0; i < k; i++) {
+        if (expert_ids[i] >= (uint64_t)config_.expert_num) {
+            fprintf(stderr, "[C++ backward_one] ERROR: Invalid expert_id=%lu >= expert_num=%ld at index %d\n",
+                    expert_ids[i], config_.expert_num, i);
+            fflush(stderr);
+            throw std::runtime_error("Invalid expert_id in backward_one");
+        }
+    }
+
+    if (debug) {
+        fprintf(stderr, "[C++ backward_one] All validations passed, starting computation...\n");
+        fflush(stderr);
+    }
+
     int nth = config_.intermediate_size / config_.stride;
     backend->do_work_stealing_job(nth * k, nullptr, [&](int task_id) {
         int expert_idx = task_id / nth;

@@ -8,7 +8,8 @@ This directory contains organized scripts for training, inference, monitoring, a
 scripts/
 ├── training/          # Training scripts
 │   ├── sft_ds2_chat_lite_hf.sh      # Fine-tune with HuggingFace backend
-│   └── sft_ds2_chat_lite.sh         # Fine-tune with KTransformers backend
+│   ├── sft_ds2_chat_lite.sh         # Fine-tune with KTransformers backend
+│   └── dpo_ds2_chat_lite_hf.sh      # DPO (RL) training with HuggingFace backend
 │
 ├── inference/         # Inference scripts
 │   ├── infer_ds2_chat_lite_hf.sh    # Inference with HuggingFace (fine-tuned)
@@ -42,7 +43,15 @@ scripts/
 ├── sft_data/         # SFT Data Generation and Conversion scripts
 │   ├── generate_identity.sh        # Generate identity training data
 │   ├── generate_date.sh            # Generate current date training data
+│   ├── generate_identity_dpo.sh    # Generate DPO preference pairs for RL training
 │   └── convert_to_llamafactory.sh  # Convert JSONL to LLaMA-Factory format + register
+│
+├── rl_training/      # RL Training (DPO) workflow scripts
+│   ├── run_complete_rl_workflow.sh  # Master workflow: Generate → Train → Evaluate
+│   ├── check_status.sh              # Check workflow status and component availability
+│   ├── register_dpo_dataset.sh      # Register DPO dataset in dataset_info.json
+│   ├── generate_comparison_report.py # Generate markdown report from evaluation results
+│   └── README.md                    # RL training scripts documentation
 │
 ├── deepspeed/         # DeepSpeed ZeRO-3 CPU Offload scripts
 │   ├── fix_deepspeed_cpu_offload.sh # Main fix script (all issues)
@@ -155,6 +164,37 @@ scripts/
 - If you specify a directory path in `-o`, the script will error with a helpful message
 - If `-o` is omitted, the file is saved as `LLaMA-Factory/data/{dataset-name}.json`
 
+### RL Training (DPO)
+```bash
+# Check workflow status
+./scripts/rl_training/check_status.sh
+
+# Run complete workflow: Generate → Train → Evaluate
+./scripts/rl_training/run_complete_rl_workflow.sh
+
+# Quick test (20 samples, 1 epoch)
+./scripts/rl_training/run_complete_rl_workflow.sh --quick-test
+
+# Generate DPO dataset only
+./scripts/sft_data/generate_identity_dpo.sh --num_records 100
+
+# Register DPO dataset
+./scripts/rl_training/register_dpo_dataset.sh \
+    sft_data/outputs/identity_sean_dpo_*.json
+
+# Run DPO training only
+./scripts/training/dpo_ds2_chat_lite_hf.sh --yes
+
+# Evaluate all models (Raw vs SFT vs DPO)
+./scripts/evaluation/run_evaluation.sh
+
+# Generate comparison report
+python scripts/rl_training/generate_comparison_report.py \
+    evaluation_results.json --output comparison_report.md
+```
+
+**See:** [`rl_training/README.md`](rl_training/README.md) for detailed RL training documentation
+
 ## DeepSpeed ZeRO-3 CPU Offload
 
 For DeepSpeed ZeRO-3 CPU offload setup and usage, see:
@@ -172,6 +212,7 @@ For detailed documentation, see:
 - [`docs/README.md`](docs/README.md) - Main scripts documentation
 - [`docs/USAGE_GUIDE.md`](docs/USAGE_GUIDE.md) - Usage guide
 - [`docs/test_backends.md`](docs/test_backends.md) - Backend testing guide
+- [`../docs/RL_TRAINING_INDEX.md`](../docs/RL_TRAINING_INDEX.md) - RL training documentation index
 
 ## Data Storage
 

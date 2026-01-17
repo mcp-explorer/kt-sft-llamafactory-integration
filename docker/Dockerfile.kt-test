@@ -1,0 +1,77 @@
+# Multi-stage build for small image size
+# Stage 1: Build kt-sft
+FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-devel AS builder
+
+ARG CUDA_ARCH=8.9
+ARG KT_VERSION=v0.5.0
+
+WORKDIR /workspace
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir \
+    ninja \
+    cmake \
+    packaging \
+    wheel \
+    setuptools \
+    numpy \
+    cpufeature
+
+# Copy local kt-sft source code (without models!)
+COPY kt-sft/ktransformers /workspace/ktransformers
+
+# Clone ktransformers repo and checkout version
+RUN git clone https://github.com/kvcache-ai/ktransformers.git /workspace/ktransformers_repo && \
+    cd /workspace/ktransformers_repo && \
+    git checkout ${KT_VERSION} && \
+    git submodule update --init --recursive
+
+# Copy our local kt-sft module with garbled output fix
+COPY kt-sft /workspace/ktransformers_repo/kt-sft
+
+# Build kt-sft
+WORKDIR /workspace/ktransformers_repo/kt-sft
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/torch_stable.html && \
+    pip install --no-cache-dir accelerate packaging && \
+    python setup.py build_ext --inplace && \
+    python setup.py install
+
+# Install runtime dependencies
+RUN pip install --no-cache-dir \
+    transformers==4.51.3 \
+    fire \
+    fastapi \
+    uvicorn \
+    torchviz
+
+# Clean up build artifacts
+RUN rm -rf /workspace/ktransformers_repo/.git && \
+    rm -rf /tmp/* && \
+    find /workspace/ktransformers_repo -name "*.pyc" -delete 2>/dev/null || true && \
+    find /workspace/ktransformers_repo -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+
+# Stage 2: Runtime image (smaller)
+FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime
+
+WORKDIR /workspace
+
+# Install runtime dependencies only
+RUN pip install --no-cache-dir \
+    transformers==4.51.3 \
+    fire \
+    fastapi \
+    uvicorn \
+    torchviz
+
+# Copy built kt-sft from builder
+COPY --from=builder /opt/conda/lib/python3.11/site-packages/ktransformers /opt/conda/lib/python3.11/site-packages/ktransformers
+COPY --from=builder /usr/local/lib/python3.11/dist-packages /usr/local/lib/python3.11/dist-packages
+
+WORKDIR /workspace
+EXPOSE 8000
+CMD ["/bin/bash"]
