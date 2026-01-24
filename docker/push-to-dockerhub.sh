@@ -531,6 +531,17 @@ main() {
         fi
     fi
 
+    # Push latest-AVX2 tag if building with x86-intel-multi (includes AVX2 support)
+    if [ "$CPU_VARIANT" = "x86-intel-multi" ]; then
+        LATEST_AVX2_IMAGE="$REGISTRY/$REPOSITORY:latest-AVX2"
+        log_step "Pushing latest-AVX2 tag"
+        if ! push_image_with_retry "$TEMP_TAG" "$LATEST_AVX2_IMAGE"; then
+            log_warning "Failed to push latest-AVX2 tag, but continuing..."
+        else
+            log_success "Successfully updated latest-AVX2 tag"
+        fi
+    fi
+
     # Cleanup temporary image
     if [ "$DRY_RUN" = false ]; then
         log_step "Cleaning up temporary image"
@@ -550,6 +561,14 @@ main() {
         summary_lines+=(
             "Simplified tag:"
             "  $SIMPLIFIED_IMAGE"
+            ""
+        )
+    fi
+
+    if [ "$CPU_VARIANT" = "x86-intel-multi" ]; then
+        summary_lines+=(
+            "latest-AVX2 tag:"
+            "  $LATEST_AVX2_IMAGE"
             ""
         )
     fi
@@ -1102,6 +1121,17 @@ main() {
         fi
     fi
 
+    # Push latest-AVX2 tag if building with x86-intel-multi (includes AVX2 support)
+    if [ "$CPU_VARIANT" = "x86-intel-multi" ]; then
+        LATEST_AVX2_IMAGE="$REGISTRY/$REPOSITORY:latest-AVX2"
+        log_step "Pushing latest-AVX2 tag"
+        if ! push_image_with_retry "$TEMP_TAG" "$LATEST_AVX2_IMAGE"; then
+            log_warning "Failed to push latest-AVX2 tag, but continuing..."
+        else
+            log_success "Successfully updated latest-AVX2 tag"
+        fi
+    fi
+
     # Cleanup temporary image
     if [ "$DRY_RUN" = false ]; then
         log_step "Cleaning up temporary image"
@@ -1121,6 +1151,14 @@ main() {
         summary_lines+=(
             "Simplified tag:"
             "  $SIMPLIFIED_IMAGE"
+            ""
+        )
+    fi
+
+    if [ "$CPU_VARIANT" = "x86-intel-multi" ]; then
+        summary_lines+=(
+            "latest-AVX2 tag:"
+            "  $LATEST_AVX2_IMAGE"
             ""
         )
     fi
